@@ -127,18 +127,37 @@
         .tendencia-resumen { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
         .tendencia-chip { background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 8px 10px; min-width: 130px; }
         .tendencia-chip strong { display: block; color: var(--text); }
+        .dialog-backdrop { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; background: #000b; padding: 18px; }
+        .dialog { width: min(100%, 440px); padding: 22px; border-radius: 12px; background: var(--card-bg); }
+        .dialog .form-linea { flex-direction: column; }
+        [hidden] { display: none !important; }
     </style>
 </head>
 <body>
 
+    <div class="dialog-backdrop" id="auth-dialog">
+        <form class="dialog" id="auth-form">
+            <h2>Entrar en la cuenta</h2>
+            <p class="nota-operativa">Inicia sesión con el usuario que hayas creado en Supabase.</p>
+            <div class="form-linea">
+                <label for="auth-email">Correo electrónico</label>
+                <input id="auth-email" type="email" autocomplete="username" required>
+                <label for="auth-password">Contraseña</label>
+                <input id="auth-password" type="password" autocomplete="current-password" required>
+            </div>
+            <p id="auth-error" class="nota-operativa" role="alert"></p>
+            <p id="auth-status" class="nota-operativa">Conectando con Supabase...</p>
+            <div class="acciones-orden"><button class="btn-green" type="submit">Iniciar sesión</button></div>
+        </form>
+    </div>
+
+    <div id="app" hidden>
     <h1>🚀 Gestor Dinámico Multi-Crypto</h1>
 
-    <!-- BOTONES DE CONTROL Y BBDD -->
+    <!-- Estado y sesión de Supabase -->
     <div class="btn-backup">
-        <button onclick="exportarBBDD()">💾 Descargar BBDD (.json)</button>
-        <button class="btn-green" onclick="document.getElementById('fileInput').click()">📂 Cargar BBDD (.json)</button>
-        <button class="btn-red" onclick="reiniciarBBDD()">⚠️ Reiniciar al Inicio</button>
-        <input type="file" id="fileInput" style="display:none" onchange="importarBBDD(event)" accept=".json">
+        <span id="estado-bbdd" class="nota-operativa">Conectando…</span>
+        <button id="auth-logout" class="btn-red" type="button">Cerrar sesión</button>
     </div>
 
     <div class="seccion">
@@ -350,6 +369,9 @@
         </table>
     </div>
 
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
     // CONFIGURACIÓN INICIAL DE LA BASE DE DATOS
     const bbddInicial = {
@@ -405,396 +427,270 @@
         }
     };
 
-    const datosV2 = JSON.parse(localStorage.getItem('solana_db_v2'));
-    const datosLegacy = JSON.parse(localStorage.getItem('solana_db'));
-    const dbDesdeLegacy = datosLegacy ? {
-        usdcCapitalTotal: 568.92,
-        pestanaActiva: "SOL",
-        cryptos: {
-            SOL: {
-                libre: Number(datosLegacy.saldos?.solLibre) || 0,
-                ordenes: (datosLegacy.ordenes || []).map(o => ({
-                    id: o.id,
-                    tipo: o.tipo,
-                    cantidad: o.sol,
-                    precio: o.precio,
-                    estado: o.estado
-                })),
-                historial: (datosLegacy.historial || []).map(h => ({
-                    tipo: h.tipo,
-                    cantidad: h.sol,
-                    precio: h.precio,
-                    fecha: h.fecha,
-                    ordenOriginal: h.ordenOriginal ? {
-                        id: h.ordenOriginal.id,
-                        tipo: h.ordenOriginal.tipo,
-                        cantidad: h.ordenOriginal.sol,
-                        precio: h.ordenOriginal.precio,
-                        estado: h.ordenOriginal.estado
-                    } : null,
-                    ordenGeneradaId: h.ordenGeneradaId
-                }))
-            },
-            HYPE: JSON.parse(JSON.stringify(bbddInicial.cryptos.HYPE)),
-            BNB: JSON.parse(JSON.stringify(bbddInicial.cryptos.BNB)),
-            FET: JSON.parse(JSON.stringify(bbddInicial.cryptos.FET)),
-            SUI: JSON.parse(JSON.stringify(bbddInicial.cryptos.SUI))
-        }
-    } : null;
-    let db = datosV2 || dbDesdeLegacy || JSON.parse(JSON.stringify(bbddInicial));
+    let db = JSON.parse(JSON.stringify(bbddInicial));
     let ejecucionPendiente = null;
-
-    Object.keys(bbddInicial.cryptos).forEach(sym => {
-        if (!db.cryptos) db.cryptos = {};
-        if (!db.cryptos[sym]) {
-            db.cryptos[sym] = JSON.parse(JSON.stringify(bbddInicial.cryptos[sym]));
-        }
-        if (!Number.isFinite(db.cryptos[sym].libre)) {
-            db.cryptos[sym].libre = bbddInicial.cryptos[sym].libre;
-        }
-        if (!Number.isFinite(db.cryptos[sym].staking)) db.cryptos[sym].staking = 0;
-        if (!Array.isArray(db.cryptos[sym].ordenes)) db.cryptos[sym].ordenes = [];
-        if (!Array.isArray(db.cryptos[sym].historial)) db.cryptos[sym].historial = [];
+    const SUPABASE_URL = 'https://zvrveapjwjvdurfijzyn.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_9oGOxXQ9xGDVwE74IJua9g_8Qf03NtO';
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true }
     });
+    const simbolosCrypto = Object.keys(bbddInicial.cryptos);
+    let usuarioActual = null;
+    let canalRealtime = null;
+    let guardadoPendiente = Promise.resolve();
+    let guardadoEnCurso = false;
+    let refrescoRealtimePendiente = false;
+    let temporizadorRealtime;
+    let idsOrdenesPrevios = new Map(simbolosCrypto.map(simbolo => [simbolo, new Set()]));
+    let idsHistorialPrevios = new Map(simbolosCrypto.map(simbolo => [simbolo, new Set()]));
 
-    const migracionStakingSolInicial = 'saldo_sol_inicial_en_staking_2026_09_23';
-    if (!db.migraciones || !db.migraciones[migracionStakingSolInicial]) {
-        const sol = db.cryptos.SOL;
-        if (sol.staking === 0 && Math.abs(sol.libre - 10.01) < 0.00000001) {
-            sol.libre = 0;
-            sol.staking = 10.01;
+    function mostrarEstado(mensaje, error = false) {
+        const estado = document.getElementById('estado-bbdd');
+        if (estado) {
+            estado.textContent = mensaje;
+            estado.style.color = error ? 'var(--red)' : 'var(--subtext)';
         }
-        db.migraciones = db.migraciones || {};
-        db.migraciones[migracionStakingSolInicial] = true;
-        localStorage.setItem('solana_db_v2', JSON.stringify(db));
+        const estadoAuth = document.getElementById('auth-status');
+        if (estadoAuth && !document.getElementById('auth-dialog').hidden) {
+            estadoAuth.textContent = mensaje;
+            estadoAuth.style.color = error ? 'var(--red)' : 'var(--subtext)';
+        }
+        const errorAuth = document.getElementById('auth-error');
+        if (error && errorAuth && !document.getElementById('auth-dialog').hidden) errorAuth.textContent = mensaje;
     }
-    if (!db.cryptos[db.pestanaActiva]) db.pestanaActiva = "SOL";
-    if (!Number.isFinite(db.usdcIngresadoTotal)) db.usdcIngresadoTotal = db.usdcCapitalTotal;
-    if (!Number.isFinite(db.eurosIngresadosTotal)) db.eurosIngresadosTotal = 2500;
-    if (!Number.isFinite(db.eurosRetiradosTotal)) db.eurosRetiradosTotal = 0;
-    if (!db.rebalancePorcentaje || typeof db.rebalancePorcentaje !== 'object') db.rebalancePorcentaje = {};
-    Object.keys(bbddInicial.cryptos).forEach(sym => {
-        if (!Number.isFinite(db.rebalancePorcentaje[sym])) {
-            db.rebalancePorcentaje[sym] = bbddInicial.rebalancePorcentaje[sym];
-        }
-        db.rebalancePorcentaje[sym] = Math.min(200, Math.max(0.01, db.rebalancePorcentaje[sym]));
-    });
-    if (!db.tendencia || typeof db.tendencia !== 'object') db.tendencia = {};
-    Object.keys(bbddInicial.cryptos).forEach(sym => {
-        if (!db.tendencia[sym] || typeof db.tendencia[sym] !== 'object') {
-            db.tendencia[sym] = { ...bbddInicial.tendencia[sym] };
-        }
-        ['diaria', 'semanal', 'mensual'].forEach(marco => {
-            if (!['Alcista', 'Lateral', 'Bajista'].includes(db.tendencia[sym][marco])) {
-                db.tendencia[sym][marco] = 'Lateral';
-            }
+
+    function comprobarRespuesta(resultado, operacion) {
+        if (resultado.error) throw new Error(operacion + ': ' + resultado.error.message);
+        return resultado.data;
+    }
+
+    function normalizarDB(estado) {
+        const vacia = JSON.parse(JSON.stringify(bbddInicial));
+        const normalizada = { ...vacia, ...estado };
+        ['usdcCapitalTotal', 'usdcIngresadoTotal', 'eurosIngresadosTotal', 'eurosRetiradosTotal', 'comisionPorcentaje'].forEach(clave => {
+            normalizada[clave] = Number.isFinite(Number(normalizada[clave])) ? Number(normalizada[clave]) : vacia[clave];
         });
-    });
-    const migracionRebalanceoPorActivo = 'rebalanceo_por_activo_2026_09_23';
-    if (!db.migraciones || !db.migraciones[migracionRebalanceoPorActivo]) {
-        const configuracionAnterior = Object.values(db.rebalancePorcentaje).every(porcentaje => porcentaje === 12);
-        if (configuracionAnterior) {
-            db.rebalancePorcentaje.SOL = 12;
-            db.rebalancePorcentaje.HYPE = 20;
-            db.rebalancePorcentaje.BNB = 8;
-        }
-        db.migraciones = db.migraciones || {};
-        db.migraciones[migracionRebalanceoPorActivo] = true;
-        localStorage.setItem('solana_db_v2', JSON.stringify(db));
-    }
-    if (!Number.isFinite(db.comisionPorcentaje)) db.comisionPorcentaje = 0.25;
-    db.comisionPorcentaje = Math.min(99.99, Math.max(0, db.comisionPorcentaje));
-
-    const comisionCoinbase025 = 'comision_coinbase_025_2026_09_23';
-    if (!db.migraciones || !db.migraciones[comisionCoinbase025]) {
-        if (db.comisionPorcentaje === 0) db.comisionPorcentaje = 0.25;
-        db.migraciones = db.migraciones || {};
-        db.migraciones[comisionCoinbase025] = true;
-        localStorage.setItem('solana_db_v2', JSON.stringify(db));
-    }
-
-    const migracionHype = 'primera_compra_hype_2026_09_23';
-    if (!db.migraciones || !db.migraciones[migracionHype]) {
-        const ordenSolanaRetirada = db.cryptos.SOL.ordenes.find(o =>
-            o.tipo === "Compra" && o.cantidad === 2.15 && o.precio === 78
-        );
-        const existeCompraHype = db.cryptos.HYPE.ordenes.some(o =>
-            o.tipo === "Compra" && o.cantidad === 1.9632 && o.precio === 85.42
-        );
-
-        if (ordenSolanaRetirada) {
-            const ids = Object.values(db.cryptos)
-                .flatMap(crypto => crypto.ordenes)
-                .map(o => Number(o.id))
-                .filter(Number.isFinite);
-            const nuevoId = Math.max(0, ...ids) + 1;
-            db.cryptos.SOL.ordenes = db.cryptos.SOL.ordenes.filter(o => o !== ordenSolanaRetirada);
-            if (!existeCompraHype) {
-                db.cryptos.HYPE.ordenes.push({
-                    id: nuevoId,
-                    tipo: "Compra",
-                    cantidad: 1.9632,
-                    precio: 85.42,
-                    estado: "En Curso"
-                });
-            }
-        }
-
-        db.migraciones = db.migraciones || {};
-        db.migraciones[migracionHype] = true;
-        localStorage.setItem('solana_db_v2', JSON.stringify(db));
-    }
-
-    const correccionSaldoHype = 'saldo_inicial_hype_corregido_2026_09_23';
-    if (!db.migraciones || !db.migraciones[correccionSaldoHype]) {
-        let saldoRealHype = 0;
-        (db.cryptos.HYPE.historial || []).forEach(h => {
-            saldoRealHype += h.tipo === "Compra" ? h.cantidad : -h.cantidad;
-        });
-        db.cryptos.HYPE.libre = Math.max(0, Number(saldoRealHype.toFixed(4)));
-        db.cryptos.HYPE.ordenes = db.cryptos.HYPE.ordenes.filter(o => o.tipo !== "Venta");
-
-        if (db.cryptos.HYPE.libre > 0) {
-            const ids = Object.values(db.cryptos)
-                .flatMap(crypto => crypto.ordenes)
-                .map(o => Number(o.id))
-                .filter(Number.isFinite);
-            const siguienteId = Math.max(0, ...ids) + 1;
-            db.cryptos.HYPE.ordenes.push({
-                id: siguienteId,
-                tipo: "Venta",
-                cantidad: db.cryptos.HYPE.libre,
-                precio: 116.59,
-                estado: "Pendiente"
+        normalizada.rebalancePorcentaje = { ...vacia.rebalancePorcentaje, ...(estado.rebalancePorcentaje || {}) };
+        normalizada.tendencia = { ...vacia.tendencia, ...(estado.tendencia || {}) };
+        normalizada.cryptos = normalizada.cryptos || {};
+        simbolosCrypto.forEach(simbolo => {
+            const cripto = normalizada.cryptos[simbolo] || {};
+            normalizada.cryptos[simbolo] = {
+                ...vacia.cryptos[simbolo], ...cripto,
+                libre: Number.isFinite(Number(cripto.libre)) ? Number(cripto.libre) : 0,
+                staking: Number.isFinite(Number(cripto.staking)) ? Number(cripto.staking) : 0,
+                ordenes: Array.isArray(cripto.ordenes) ? cripto.ordenes : [],
+                historial: Array.isArray(cripto.historial) ? cripto.historial : []
+            };
+            normalizada.rebalancePorcentaje[simbolo] = Number.isFinite(Number(normalizada.rebalancePorcentaje[simbolo]))
+                ? Number(normalizada.rebalancePorcentaje[simbolo]) : vacia.rebalancePorcentaje[simbolo];
+            normalizada.tendencia[simbolo] = normalizada.tendencia[simbolo] || vacia.tendencia[simbolo];
+            normalizada.cryptos[simbolo].historial.forEach(registro => {
+                if (!registro.id) registro.id = crypto.randomUUID();
             });
-        }
-
-        db.migraciones = db.migraciones || {};
-        db.migraciones[correccionSaldoHype] = true;
-        localStorage.setItem('solana_db_v2', JSON.stringify(db));
+        });
+        if (!normalizada.cryptos[normalizada.pestanaActiva]) normalizada.pestanaActiva = 'SOL';
+        return normalizada;
     }
 
-    const estrategiaHype = 'escalera_spot_hype_2026_09_23';
-    if (!db.migraciones || !db.migraciones[estrategiaHype]) {
-        const ventasHypeExistentes = db.cryptos.HYPE.ordenes.filter(o => o.tipo === "Venta");
-        if (ventasHypeExistentes.length === 0 && db.cryptos.HYPE.libre > 0) {
-            const ids = Object.values(db.cryptos)
-                .flatMap(crypto => crypto.ordenes)
-                .map(o => Number(o.id))
-                .filter(Number.isFinite);
-            const siguienteId = Math.max(0, ...ids) + 1;
-            db.cryptos.HYPE.ordenes.push(
-                { id: siguienteId, tipo: "Venta", cantidad: 3.1677, precio: 106.88, estado: "En Curso" },
-                { id: siguienteId + 1, tipo: "Venta", cantidad: 4.4348, precio: 116.59, estado: "En Curso" },
-                { id: siguienteId + 2, tipo: "Venta", cantidad: 5.0684, precio: 126.31, estado: "En Curso" }
-            );
-        }
-        db.migraciones = db.migraciones || {};
-        db.migraciones[estrategiaHype] = true;
-        localStorage.setItem('solana_db_v2', JSON.stringify(db));
-    }
-
-    const consolidacionHype = 'consolidacion_ventas_hype_2026_09_23';
-    if (!db.migraciones || !db.migraciones[consolidacionHype]) {
-        const ventasHype = db.cryptos.HYPE.ordenes.filter(o => o.tipo === "Venta");
-        const preciosAnteriores = [95.67, 105.92, 106.88, 116.17, 116.59, 126.31];
-        const esEscaleraAnterior = ventasHype.length === 6 && ventasHype.every(o =>
-            preciosAnteriores.includes(o.precio)
-        );
-
-        if (esEscaleraAnterior) {
-            const ids = Object.values(db.cryptos)
-                .flatMap(crypto => crypto.ordenes)
-                .map(o => Number(o.id))
-                .filter(Number.isFinite);
-            const siguienteId = Math.max(0, ...ids) + 1;
-            db.cryptos.HYPE.ordenes = db.cryptos.HYPE.ordenes.filter(o => o.tipo !== "Venta");
-            db.cryptos.HYPE.ordenes.push(
-                { id: siguienteId, tipo: "Venta", cantidad: 3.6585, precio: 106.88, estado: "Pendiente" },
-                { id: siguienteId + 1, tipo: "Venta", cantidad: 3.6585, precio: 116.59, estado: "Pendiente" },
-                { id: siguienteId + 2, tipo: "Venta", cantidad: 3.6585, precio: 126.31, estado: "Pendiente" },
-                { id: siguienteId + 3, tipo: "Venta", cantidad: 3.6586, precio: 136.02, estado: "Pendiente" }
-            );
-        }
-        db.migraciones = db.migraciones || {};
-        db.migraciones[consolidacionHype] = true;
-        localStorage.setItem('solana_db_v2', JSON.stringify(db));
-    }
-
-    const simplificacionHype = 'una_sola_orden_hype_2026_09_23';
-    if (!db.migraciones || !db.migraciones[simplificacionHype]) {
-        const ventasHype = db.cryptos.HYPE.ordenes.filter(o => o.tipo === "Venta");
-        const preciosEscalera = [106.88, 116.59, 126.31, 136.02];
-        const esEscaleraGenerada = ventasHype.length === 4 && ventasHype.every(o =>
-            preciosEscalera.includes(o.precio)
-        );
-
-        if (esEscaleraGenerada) {
-            const id = Math.max(0, ...Object.values(db.cryptos)
-                .flatMap(crypto => crypto.ordenes)
-                .map(o => Number(o.id))
-                .filter(Number.isFinite)) + 1;
-            db.cryptos.HYPE.ordenes = db.cryptos.HYPE.ordenes.filter(o => o.tipo !== "Venta");
-            if (db.cryptos.HYPE.libre > 0) {
-                db.cryptos.HYPE.ordenes.push({
-                    id,
-                    tipo: "Venta",
-                    cantidad: db.cryptos.HYPE.libre,
-                    precio: 116.59,
-                    estado: "Pendiente"
-                });
+    async function guardarTabla(tabla, filas, claveConflicto, idsPrevios = null, campoId = null) {
+        if (filas.length) comprobarRespuesta(await supabaseClient.from(tabla).upsert(filas, { onConflict: claveConflicto }), 'Guardar ' + tabla);
+        if (!idsPrevios || !campoId) return;
+        const idsActuales = new Map(simbolosCrypto.map(simbolo => [simbolo, new Set()]));
+        filas.forEach(fila => idsActuales.get(fila.symbol).add(String(fila[campoId])));
+        for (const simbolo of simbolosCrypto) {
+            for (const id of idsPrevios.get(simbolo)) {
+                if (idsActuales.get(simbolo).has(id)) continue;
+                comprobarRespuesta(await supabaseClient.from(tabla).delete().eq('user_id', usuarioActual.id)
+                    .eq('symbol', simbolo).eq(campoId, id), 'Eliminar de ' + tabla);
             }
+            idsPrevios.set(simbolo, idsActuales.get(simbolo));
         }
-        db.migraciones = db.migraciones || {};
-        db.migraciones[simplificacionHype] = true;
-        localStorage.setItem('solana_db_v2', JSON.stringify(db));
     }
 
-    const limpiezaOrdenesHype = 'limpieza_ordenes_hype_2026_09_23';
-    if (!db.migraciones || !db.migraciones[limpiezaOrdenesHype]) {
-        const hype = db.cryptos.HYPE;
-        const comprasHype = hype.ordenes.filter(o => o.tipo === "Compra");
-        const ventasHype = hype.ordenes.filter(o => o.tipo === "Venta");
-
-        // Conserva una sola orden activa de cada lado; elimina tramos heredados.
-        if (comprasHype.length > 1) {
-            hype.ordenes = hype.ordenes.filter(o => o.tipo !== "Compra" || o.id === comprasHype[0].id);
-        }
-        if (ventasHype.length > 1) {
-            const ventaPrincipal = ventasHype.reduce((mejor, venta) =>
-                venta.precio > mejor.precio ? venta : mejor
-            );
-            hype.ordenes = hype.ordenes.filter(o => o.tipo !== "Venta" || o.id === ventaPrincipal.id);
-        }
-
-        db.migraciones = db.migraciones || {};
-        db.migraciones[limpiezaOrdenesHype] = true;
-        localStorage.setItem('solana_db_v2', JSON.stringify(db));
+    async function persistirEstado() {
+        const userId = usuarioActual.id;
+        const snapshot = normalizarDB(JSON.parse(JSON.stringify(db)));
+        db = snapshot;
+        const configuracion = {
+            user_id: userId,
+            usdc_capital_total: snapshot.usdcCapitalTotal,
+            usdc_ingresado_total: snapshot.usdcIngresadoTotal,
+            euros_ingresados_total: snapshot.eurosIngresadosTotal,
+            euros_retirados_total: snapshot.eurosRetiradosTotal,
+            comision_porcentaje: snapshot.comisionPorcentaje,
+            pestana_activa: snapshot.pestanaActiva
+        };
+        const saldos = simbolosCrypto.map(symbol => ({
+            user_id: userId, symbol, libre: snapshot.cryptos[symbol].libre,
+            staking: snapshot.cryptos[symbol].staking,
+            rebalance_porcentaje: snapshot.rebalancePorcentaje[symbol], tendencia: snapshot.tendencia[symbol]
+        }));
+        const ordenes = [];
+        const historial = [];
+        simbolosCrypto.forEach(symbol => {
+            snapshot.cryptos[symbol].ordenes.forEach((orden, position) => ordenes.push({
+                user_id: userId, symbol, order_id: String(orden.id), position, data: orden
+            }));
+            snapshot.cryptos[symbol].historial.forEach((registro, position) => historial.push({
+                user_id: userId, symbol, history_id: String(registro.id), position, data: registro
+            }));
+        });
+        comprobarRespuesta(await supabaseClient.from('calculadora_config').upsert(configuracion, { onConflict: 'user_id' }), 'Guardar config');
+        comprobarRespuesta(await supabaseClient.from('calculadora_saldos').upsert(saldos, { onConflict: 'user_id,symbol' }), 'Guardar saldos');
+        await guardarTabla('calculadora_ordenes', ordenes, 'user_id,symbol,order_id', idsOrdenesPrevios, 'order_id');
+        await guardarTabla('calculadora_historial', historial, 'user_id,symbol,history_id', idsHistorialPrevios, 'history_id');
     }
 
-    const nivelesHype = 'tres_niveles_hype_2026_09_23';
-    if (!db.migraciones || !db.migraciones[nivelesHype]) {
-        const hype = db.cryptos.HYPE;
-        const ids = Object.values(db.cryptos)
-            .flatMap(crypto => crypto.ordenes)
-            .map(o => Number(o.id))
-            .filter(Number.isFinite);
-        const siguienteId = Math.max(0, ...ids) + 1;
-        const ventasExistentes = hype.ordenes.filter(o => o.tipo === "Venta");
+    function guardarEnSupabase() {
+        if (!usuarioActual) return Promise.resolve(false);
+        mostrarEstado('Guardando cambios en Supabase...');
+        guardadoPendiente = guardadoPendiente.then(async () => {
+            guardadoEnCurso = true;
+            try {
+                await persistirEstado();
+                mostrarEstado('Conectado - cambios guardados en Supabase');
+                return true;
+            } catch (error) {
+                console.error('Error al guardar cambios en Supabase:', error);
+                mostrarEstado('Error al guardar: ' + error.message, true);
+                return false;
+            } finally {
+                guardadoEnCurso = false;
+                if (refrescoRealtimePendiente) {
+                    refrescoRealtimePendiente = false;
+                    programarRefrescoRealtime();
+                }
+            }
+        });
+        return guardadoPendiente;
+    }
 
-        if (ventasExistentes.length > 0 && hype.libre > 0) {
-            hype.ordenes = hype.ordenes.filter(o => o.tipo !== "Venta");
-            const cantidades = [
-                Number((hype.libre * 0.40).toFixed(4)),
-                Number((hype.libre * 0.35).toFixed(4)),
-                Number((hype.libre - hype.libre * 0.40 - hype.libre * 0.35).toFixed(4))
-            ];
-            [98.23, 111.05, 123.86].forEach((precio, index) => {
-                hype.ordenes.push({
-                    id: siguienteId + index,
-                    tipo: "Venta",
-                    cantidad: cantidades[index],
-                    precio,
-                    estado: "Pendiente"
-                });
+    async function cargarDatosDesdeSupabase(remoto = false) {
+        if (!usuarioActual) return;
+        if (!remoto) mostrarEstado('Cargando datos desde Supabase...');
+        const userId = usuarioActual.id;
+        const [configResult, saldosResult, ordenesResult, historialResult] = await Promise.all([
+            supabaseClient.from('calculadora_config').select('*').eq('user_id', userId).maybeSingle(),
+            supabaseClient.from('calculadora_saldos').select('*').eq('user_id', userId),
+            supabaseClient.from('calculadora_ordenes').select('*').eq('user_id', userId).order('symbol').order('position'),
+            supabaseClient.from('calculadora_historial').select('*').eq('user_id', userId).order('symbol').order('position')
+        ]);
+        const config = comprobarRespuesta(configResult, 'Cargar config');
+        const saldos = comprobarRespuesta(saldosResult, 'Cargar saldos') || [];
+        const ordenes = comprobarRespuesta(ordenesResult, 'Cargar ordenes') || [];
+        const historial = comprobarRespuesta(historialResult, 'Cargar historial') || [];
+        if (!usuarioActual || usuarioActual.id !== userId) return;
+        const estado = JSON.parse(JSON.stringify(bbddInicial));
+        if (config) Object.assign(estado, {
+            usdcCapitalTotal: config.usdc_capital_total, usdcIngresadoTotal: config.usdc_ingresado_total,
+            eurosIngresadosTotal: config.euros_ingresados_total, eurosRetiradosTotal: config.euros_retirados_total,
+            comisionPorcentaje: config.comision_porcentaje, pestanaActiva: config.pestana_activa
+        });
+        saldos.forEach(fila => {
+            if (!estado.cryptos[fila.symbol]) return;
+            estado.cryptos[fila.symbol].libre = Number(fila.libre);
+            estado.cryptos[fila.symbol].staking = Number(fila.staking);
+            estado.rebalancePorcentaje[fila.symbol] = Number(fila.rebalance_porcentaje);
+            estado.tendencia[fila.symbol] = fila.tendencia || estado.tendencia[fila.symbol];
+        });
+        ordenes.forEach(fila => { if (estado.cryptos[fila.symbol] && fila.data) estado.cryptos[fila.symbol].ordenes.push(fila.data); });
+        historial.forEach(fila => { if (estado.cryptos[fila.symbol] && fila.data) estado.cryptos[fila.symbol].historial.push(fila.data); });
+        db = normalizarDB(estado);
+        idsOrdenesPrevios = new Map(simbolosCrypto.map(symbol => [symbol, new Set(ordenes.filter(row => row.symbol === symbol).map(row => String(row.order_id)))]));
+        idsHistorialPrevios = new Map(simbolosCrypto.map(symbol => [symbol, new Set(historial.filter(row => row.symbol === symbol).map(row => String(row.history_id)))]));
+        if (!remoto) {
+            document.getElementById('auth-dialog').hidden = true;
+            document.getElementById('app').hidden = false;
+            render();
+            if (!config && !saldos.length && !ordenes.length && !historial.length) {
+                if (!await guardarEnSupabase()) throw new Error('No se pudo inicializar la base de datos. Revisa las tablas y las politicas RLS.');
+            }
+            mostrarEstado('Conectado - datos sincronizados con Supabase');
+        } else render();
+    }
+
+    function programarRefrescoRealtime() {
+        clearTimeout(temporizadorRealtime);
+        temporizadorRealtime = setTimeout(async () => {
+            if (guardadoEnCurso) { refrescoRealtimePendiente = true; return; }
+            try { await cargarDatosDesdeSupabase(true); }
+            catch (error) {
+                console.error('Error al recibir cambios Realtime:', error);
+                mostrarEstado('Error de sincronizacion: ' + error.message, true);
+            }
+        }, 400);
+    }
+
+    function suscribirRealtime(userId) {
+        if (canalRealtime) supabaseClient.removeChannel(canalRealtime);
+        canalRealtime = supabaseClient.channel('calculadora-' + userId);
+        ['calculadora_config', 'calculadora_saldos', 'calculadora_ordenes', 'calculadora_historial'].forEach(tabla => {
+            canalRealtime.on('postgres_changes', { event: '*', schema: 'public', table: tabla, filter: 'user_id=eq.' + userId }, () => {
+                if (guardadoEnCurso) refrescoRealtimePendiente = true;
+                else programarRefrescoRealtime();
             });
-        }
-
-        db.migraciones = db.migraciones || {};
-        db.migraciones[nivelesHype] = true;
-        localStorage.setItem('solana_db_v2', JSON.stringify(db));
-    }
-
-    const limiteTresOrdenesHype = 'limite_tres_ordenes_hype_2026_09_23';
-    if (!db.migraciones || !db.migraciones[limiteTresOrdenesHype]) {
-        const hype = db.cryptos.HYPE;
-        ["Compra", "Venta"].forEach(tipo => {
-            const ordenesTipo = hype.ordenes.filter(o => o.tipo === tipo);
-            const idsConservar = new Set(ordenesTipo.slice(0, 3).map(o => o.id));
-            hype.ordenes = hype.ordenes.filter(o => o.tipo !== tipo || idsConservar.has(o.id));
         });
-        db.migraciones = db.migraciones || {};
-        db.migraciones[limiteTresOrdenesHype] = true;
-        localStorage.setItem('solana_db_v2', JSON.stringify(db));
-    }
-
-    const ajusteCantidadCompraHype = 'ajuste_cantidad_hype_comision_2026_09_23';
-    if (!db.migraciones || !db.migraciones[ajusteCantidadCompraHype]) {
-        const cantidadAnterior = 1.9632;
-        const cantidadNueva = 1.9583;
-        const hype = db.cryptos.HYPE;
-        const ordenAnterior = hype.ordenes.find(o =>
-            o.tipo === "Compra" && o.precio === 85.42 && o.cantidad === cantidadAnterior
-        );
-
-        if (ordenAnterior) ordenAnterior.cantidad = cantidadNueva;
-
-        (hype.historial || []).forEach(h => {
-            if (h.tipo === "Compra" && h.precio === 85.42 && h.cantidad === cantidadAnterior) {
-                h.cantidad = cantidadNueva;
+        canalRealtime.subscribe((estado, error) => {
+            if (estado === 'CHANNEL_ERROR' || estado === 'TIMED_OUT') {
+                console.error('Error de canal Realtime:', error || estado);
+                mostrarEstado('Realtime no disponible; se mantienen los guardados.', true);
             }
         });
-
-        if (hype.libre > 0 && hype.libre <= cantidadAnterior) {
-            hype.libre = Number((hype.libre - (cantidadAnterior - cantidadNueva)).toFixed(4));
-        }
-
-        db.migraciones = db.migraciones || {};
-        db.migraciones[ajusteCantidadCompraHype] = true;
-        localStorage.setItem('solana_db_v2', JSON.stringify(db));
     }
 
-    const ajusteCantidadRealHype = 'ajuste_cantidad_real_hype_2026_09_23';
-    if (!db.migraciones || !db.migraciones[ajusteCantidadRealHype]) {
-        const cantidadAnterior = 1.9583;
-        const cantidadNueva = 1.958;
-        const hype = db.cryptos.HYPE;
-        const ordenAnterior = hype.ordenes.find(o =>
-            o.tipo === "Compra" && o.precio === 85.42 && o.cantidad === cantidadAnterior
-        );
+    async function cargarSesion() {
+        const { data, error } = await supabaseClient.auth.getSession();
+        if (error) throw error;
+        if (!data.session) {
+            document.getElementById('app').hidden = true;
+            document.getElementById('auth-dialog').hidden = false;
+            mostrarEstado('Inicia sesion para continuar.');
+            return;
+        }
+        usuarioActual = data.session.user;
+        await cargarDatosDesdeSupabase();
+        suscribirRealtime(usuarioActual.id);
+    }
 
-        if (ordenAnterior) ordenAnterior.cantidad = cantidadNueva;
-        (hype.historial || []).forEach(h => {
-            if (h.tipo === "Compra" && h.precio === 85.42 && h.cantidad === cantidadAnterior) {
-                h.cantidad = cantidadNueva;
-            }
+    document.getElementById('auth-form').addEventListener('submit', async event => {
+        event.preventDefault();
+        document.getElementById('auth-error').textContent = '';
+        const { error } = await supabaseClient.auth.signInWithPassword({
+            email: document.getElementById('auth-email').value, password: document.getElementById('auth-password').value
         });
-        if (hype.libre > 0 && hype.libre <= cantidadAnterior) {
-            hype.libre = Number((hype.libre - (cantidadAnterior - cantidadNueva)).toFixed(4));
+        if (error) {
+            document.getElementById('auth-error').textContent = 'No se pudo iniciar sesion. Comprueba el correo y la contrasena.';
+            console.error('Error al iniciar sesion:', error.message);
+            return;
         }
-
-        db.migraciones = db.migraciones || {};
-        db.migraciones[ajusteCantidadRealHype] = true;
-        localStorage.setItem('solana_db_v2', JSON.stringify(db));
-    }
-
-    const ajusteReservaCompraHype = 'ajuste_reserva_compra_hype_2026_09_23';
-    if (!db.migraciones || !db.migraciones[ajusteReservaCompraHype]) {
-        const ordenHype = db.cryptos.HYPE.ordenes.find(o =>
-            o.tipo === "Compra" && o.precio === 85.42 && o.cantidad === 1.958
-        );
-        if (ordenHype) ordenHype.importeReserva = 167.67049;
-        db.migraciones = db.migraciones || {};
-        db.migraciones[ajusteReservaCompraHype] = true;
-        localStorage.setItem('solana_db_v2', JSON.stringify(db));
-    }
-
-    const ajusteUSDCInicialReal = 'ajuste_usdc_inicial_real_2026_09_23';
-    if (!db.migraciones || !db.migraciones[ajusteUSDCInicialReal]) {
-        if (Math.abs(db.usdcCapitalTotal - 568.92) < 0.00001) {
-            db.usdcCapitalTotal = 569.62586;
-            if (Math.abs(db.usdcIngresadoTotal - 568.92) < 0.00001) {
-                db.usdcIngresadoTotal = 569.62586;
-            }
+        try { await cargarSesion(); }
+        catch (errorCarga) {
+            console.error('Error al cargar datos:', errorCarga);
+            document.getElementById('auth-error').textContent = 'No se pudieron cargar los datos: ' + errorCarga.message;
         }
-        db.migraciones = db.migraciones || {};
-        db.migraciones[ajusteUSDCInicialReal] = true;
-        localStorage.setItem('solana_db_v2', JSON.stringify(db));
-    }
+    });
+
+    document.getElementById('auth-logout').addEventListener('click', async () => {
+        await guardadoPendiente;
+        const { error } = await supabaseClient.auth.signOut();
+        if (error) { mostrarEstado('No se pudo cerrar sesion: ' + error.message, true); return; }
+        usuarioActual = null;
+        if (canalRealtime) await supabaseClient.removeChannel(canalRealtime);
+        canalRealtime = null;
+        document.getElementById('app').hidden = true;
+        document.getElementById('auth-dialog').hidden = false;
+        mostrarEstado('Sesion cerrada.');
+    });
+
+    cargarSesion().catch(error => {
+        console.error('Error al inicializar Supabase:', error);
+        mostrarEstado('No se pudieron cargar los datos: ' + error.message, true);
+    });
 
     function guardarBBDD() {
-        localStorage.setItem('solana_db_v2', JSON.stringify(db));
         render();
+        void guardarEnSupabase();
     }
 
     function agregarUSDC() {
@@ -1010,6 +906,7 @@
             btn.classList.toggle('active', btn.dataset.symbol === symbol);
         });
         render(symbol);
+        guardarEnSupabase();
     }
 
     function render(symbol = db.pestanaActiva) {
@@ -1024,14 +921,14 @@
         const saldoLibreAntesDeReconciliar = cryptoActual.libre;
         asegurarSaldoIncluyeReservasVenta(cryptoActual);
         if (cryptoActual.libre > saldoLibreAntesDeReconciliar) {
-            localStorage.setItem('solana_db_v2', JSON.stringify(db));
+            guardarEnSupabase();
         }
 
         // 1. Recálculo Global de USDC Retenido (únicamente compras en curso)
         const usdcBloqueadoTotal = calcularUsdcBloqueado();
 
         if (db.usdcCapitalTotal === undefined) {
-            db.usdcCapitalTotal = 568.92;
+            db.usdcCapitalTotal = 0;
         }
 
         // USDC Libre real = Capital Total - Retenido activamente en Coinbase
@@ -1941,41 +1838,6 @@
         }
     }
 
-    function reiniciarBBDD() {
-        if (confirm("¿Estás seguro de reiniciar las 3 pestañas al estado inicial?")) {
-            localStorage.removeItem('solana_db_v2');
-            localStorage.removeItem('solana_db');
-            db = JSON.parse(JSON.stringify(bbddInicial));
-            guardarBBDD();
-        }
-    }
-
-    function exportarBBDD() {
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(db, null, 2));
-        const dlAnchorElem = document.createElement('a');
-        dlAnchorElem.setAttribute("href", dataStr);
-        dlAnchorElem.setAttribute("download", `crypto_manager_bbdd_${new Date().toISOString().slice(0,10)}.json`);
-        dlAnchorElem.click();
-    }
-
-    function importarBBDD(event) {
-        const fileReader = new FileReader();
-        fileReader.onload = function(e) {
-            try {
-                const importada = JSON.parse(e.target.result);
-                if (!importada || !importada.cryptos || typeof importada.usdcCapitalTotal !== 'number') {
-                    throw new Error('Formato no válido');
-                }
-                db = importada;
-                guardarBBDD();
-            } catch (error) {
-                alert("El archivo no tiene un formato de calculadora válido.");
-            }
-        };
-        fileReader.readAsText(event.target.files[0]);
-    }
-
-    render();
 </script>
 </body>
 </html>
