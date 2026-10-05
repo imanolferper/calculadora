@@ -1,0 +1,1981 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestor Dinámico Multi-Crypto (SOL / HYPE / BNB / FET / SUI)</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --card-bg: #1e293b;
+            --accent: #38bdf8;
+            --green: #10b981;
+            --purple: #c084fc;
+            --yellow: #facc15;
+            --red: #ef4444;
+            --text: #f8fafc;
+            --subtext: #94a3b8;
+        }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            max-width: 1100px;
+            margin: 15px auto;
+            padding: 15px;
+        }
+        h1, h2 { color: var(--accent); margin-bottom: 10px; }
+        
+        /* SISTEMA DE PESTAÑAS */
+        .tabs-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #334155;
+            padding-bottom: 5px;
+        }
+        .tab-btn {
+            background-color: #1e293b;
+            color: var(--subtext);
+            padding: 12px 24px;
+            border-radius: 8px 8px 0 0;
+            border: 1px solid #334155;
+            border-bottom: none;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        .tab-btn.active {
+            background-color: var(--accent);
+            color: #0f172a;
+            border-color: var(--accent);
+        }
+
+        .grid-saldos {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .card-saldo {
+            background-color: var(--card-bg);
+            padding: 15px;
+            border-radius: 10px;
+            border-left: 4px solid var(--accent);
+        }
+        .card-saldo.green { border-left-color: var(--green); }
+        .card-saldo.purple { border-left-color: var(--purple); }
+        .card-saldo.global { border-left-color: var(--yellow); background-color: #1a2333; }
+        .monto { font-size: 20px; font-weight: bold; margin-top: 5px; }
+        
+        .seccion {
+            background-color: var(--card-bg);
+            padding: 18px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            overflow-x: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            min-width: 600px;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px;
+            border-bottom: 1px solid #334155;
+        }
+        th { color: var(--subtext); font-size: 13px; text-transform: uppercase; }
+        select, button, input {
+            padding: 8px 10px;
+            border-radius: 6px;
+            border: 1px solid #334155;
+            background-color: #0f172a;
+            color: var(--text);
+            font-size: 14px;
+        }
+        button {
+            background-color: #0284c7;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover { opacity: 0.9; }
+        button.btn-green { background-color: #059669; }
+        button.btn-red { background-color: var(--red); }
+        button.btn-warning { background-color: #d97706; }
+        
+        .form-linea { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+        .btn-backup { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+        .header-tabla { background-color: #0f172a; font-weight: bold; color: var(--accent); }
+        .usdc-parens { color: var(--subtext); font-size: 13px; font-weight: normal; }
+        .nota-operativa { color: var(--subtext); font-size: 13px; margin-top: 8px; line-height: 1.45; }
+        .panel-ejecucion { border: 2px solid var(--accent); background-color: #172554; }
+        .panel-ejecucion[hidden] { display: none; }
+        .panel-ejecucion .form-linea { align-items: end; }
+        .campo-panel { display: flex; flex-direction: column; gap: 5px; }
+        .campo-panel label { color: var(--subtext); font-size: 13px; }
+        .campo-manual { display: flex; flex: 1 1 190px; flex-direction: column; gap: 5px; min-width: 160px; }
+        .campo-manual label { color: var(--text); font-size: 13px; font-weight: 600; }
+        .campo-manual select, .campo-manual input { box-sizing: border-box; width: 100%; }
+        .ayuda-campo { color: var(--subtext); font-size: 12px; line-height: 1.4; }
+        .acciones-orden { display: flex; flex: 1 1 100%; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+        .sugerencia { color: var(--yellow); margin: 10px 0 0; }
+        .tendencia-resumen { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+        .tendencia-chip { background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 8px 10px; min-width: 130px; }
+        .tendencia-chip strong { display: block; color: var(--text); }
+    </style>
+</head>
+<body>
+
+    <h1>🚀 Gestor Dinámico Multi-Crypto</h1>
+
+    <!-- BOTONES DE CONTROL Y BBDD -->
+    <div class="btn-backup">
+        <button onclick="exportarBBDD()">💾 Descargar BBDD (.json)</button>
+        <button class="btn-green" onclick="document.getElementById('fileInput').click()">📂 Cargar BBDD (.json)</button>
+        <button class="btn-red" onclick="reiniciarBBDD()">⚠️ Reiniciar al Inicio</button>
+        <input type="file" id="fileInput" style="display:none" onchange="importarBBDD(event)" accept=".json">
+    </div>
+
+    <div class="seccion">
+        <h2>💵 Dinero USDC</h2>
+        <small style="color:var(--subtext)">Añade USDC cuando entre dinero nuevo. Retíralo cuando lo saques de la cuenta o lo uses fuera de esta calculadora.</small>
+        <div class="form-linea">
+            <input type="number" id="ingreso-usdc" placeholder="USDC recibidos" min="0.01" step="0.01">
+            <input type="number" id="ingreso-euros" placeholder="Euros pagados" min="0.01" step="0.01">
+            <button class="btn-green" onclick="agregarUSDC()">Añadir dinero</button>
+            <input type="number" id="retirada-usdc" placeholder="USDC retirados" min="0.01" step="0.01">
+            <input type="number" id="retirada-euros" placeholder="Euros recibidos" min="0.01" step="0.01">
+            <button class="btn-red" onclick="retirarUSDC()">Sacar dinero</button>
+        </div>
+        <div class="form-linea">
+            <label for="comision-porcentaje">Comisión Coinbase (%)</label>
+            <input type="number" id="comision-porcentaje" min="0" max="100" step="0.01" placeholder="0">
+            <button onclick="guardarComision()">Guardar comisión</button>
+        </div>
+        <div class="form-linea">
+            <label for="rebalance-porcentaje">Objetivo automático de rebalanceo (%)</label>
+            <input type="number" id="rebalance-porcentaje" min="0.01" max="200" step="0.1" placeholder="12">
+            <button onclick="guardarRebalanceo()">Guardar objetivo</button>
+        </div>
+    </div>
+
+    <!-- PESTAÑAS DE CRIPTOMONEDAS -->
+    <div class="tabs-container">
+        <button class="tab-btn active" data-symbol="SOL" onclick="cambiarPestana(this.dataset.symbol)">Solana (SOL)</button>
+        <button class="tab-btn" data-symbol="HYPE" onclick="cambiarPestana(this.dataset.symbol)">Hyperliquid (HYPE)</button>
+        <button class="tab-btn" data-symbol="BNB" onclick="cambiarPestana(this.dataset.symbol)">Binance Coin (BNB)</button>
+        <button class="tab-btn" data-symbol="FET" onclick="cambiarPestana(this.dataset.symbol)">Artificial Superintelligence Alliance (FET)</button>
+        <button class="tab-btn" data-symbol="SUI" onclick="cambiarPestana(this.dataset.symbol)">Sui (SUI)</button>
+    </div>
+
+    <div class="seccion">
+        <h2>📈 Análisis automático</h2>
+        <small style="color:var(--subtext)">Sincroniza la moneda seleccionada antes de generar sugerencias o una malla.</small>
+        <div class="form-linea">
+            <button onclick="sincronizarTendencia()">🔄 Sincronizar análisis de mercado</button>
+            <span id="estado-sincronizacion" class="estado-sincronizacion nota-operativa">Sin sincronizar</span>
+        </div>
+    </div>
+
+    <!-- RESUMEN DE SALDOS -->
+    <div class="grid-saldos">
+        <div class="card-saldo">
+            <div id="label-cripto-libre">SOL Libre (HOLD)</div>
+            <div class="monto" id="cripto-libre">0,00</div>
+        </div>
+        <div class="card-saldo purple">
+            <div id="label-cripto-bloqueado">SOL Reservado para ventas</div>
+            <div class="monto" id="cripto-bloqueado">0,00</div>
+        </div>
+        <div class="card-saldo global">
+            <div>💵 USDC disponible para usar (todas las monedas)</div>
+            <div class="monto" id="usdc-libre">$0,00 USDC</div>
+        </div>
+        <div class="card-saldo green">
+            <div>🔒 USDC reservado en compras (todas las monedas)</div>
+            <div class="monto" id="usdc-bloqueado-total">$0,00 USDC</div>
+        </div>
+        <div class="card-saldo global">
+            <div>📊 USDC total de todas las monedas</div>
+            <div class="monto" id="usdc-capital-total">$0,00 USDC</div>
+        </div>
+        <div class="card-saldo global">
+            <div>🏦 USDC añadido en total</div>
+            <div class="monto" id="usdc-ingresado-total">$0,00 USDC</div>
+        </div>
+        <div class="card-saldo global">
+            <div>💶 Euros invertidos</div>
+            <div class="monto" id="euros-ingresados-total">0,00 EUR</div>
+        </div>
+        <div class="card-saldo green">
+            <div>💶 Euros recuperados</div>
+            <div class="monto" id="euros-retirados-total">0,00 EUR</div>
+        </div>
+        <div class="card-saldo purple">
+            <div id="label-cripto-staking">SOL en staking</div>
+            <div class="monto" id="cripto-staking">0,0000 SOL</div>
+        </div>
+        <div class="card-saldo">
+            <div id="label-precio-medio">Precio medio de la posición SOL</div>
+            <div class="monto" id="precio-medio">Sin compras</div>
+        </div>
+    </div>
+
+    <div class="seccion">
+        <h2>🔒 Dinero en staking</h2>
+        <small style="color:var(--subtext)">Guarda o recupera cripto del staking. Esto no compra ni vende nada.</small>
+        <div class="form-linea">
+            <input type="number" id="movimiento-staking" placeholder="Cantidad de SOL, HYPE, BNB, FET o SUI" min="0.0001" step="0.0001">
+            <button class="btn-warning" onclick="pasarAStaking()">Guardar en staking</button>
+            <button class="btn-green" onclick="retirarDeStaking()">Sacar del staking para operar</button>
+        </div>
+        <div class="nota-operativa">Para convertir lo recuperado en USDC, registra después una venta ejecutada.</div>
+    </div>
+
+    <div id="panel-ejecucion" class="seccion panel-ejecucion" hidden>
+        <h2 id="titulo-ejecucion">Confirmar operación</h2>
+        <div id="resumen-ejecucion" class="nota-operativa"></div>
+        <div class="form-linea">
+            <button onclick="sincronizarTendencia()">🔄 Sincronizar análisis de mercado</button>
+            <span class="estado-sincronizacion nota-operativa">Sincroniza la tendencia y el precio antes de confirmar.</span>
+        </div>
+        <div class="form-linea">
+            <div class="campo-panel">
+                <label for="ejecucion-precio">Precio real</label>
+                <input type="number" id="ejecucion-precio" min="0.00000001" step="0.01" oninput="actualizarRecomendacion()">
+            </div>
+            <div class="campo-panel">
+                <label for="ejecucion-cantidad">Cantidad real</label>
+                <input type="number" id="ejecucion-cantidad" min="0.00000001" step="0.0001" oninput="actualizarRecomendacion()">
+            </div>
+            <div class="campo-panel">
+                <label for="ejecucion-comision">Comisión USDC</label>
+                <input type="number" id="ejecucion-comision" min="0" step="0.01" oninput="actualizarRecomendacion()">
+            </div>
+        </div>
+        <div class="form-linea">
+            <div class="campo-panel">
+                <label id="label-nivel-1" for="ejecucion-nivel-1">Nivel sugerido</label>
+                <input type="number" id="ejecucion-nivel-1" min="0.00000001" step="0.01" oninput="actualizarRecomendacion()">
+            </div>
+            <div class="campo-panel">
+                <label id="label-nivel-2" for="ejecucion-nivel-2">Segundo nivel opcional</label>
+                <input type="number" id="ejecucion-nivel-2" min="0.00000001" step="0.01" oninput="actualizarRecomendacion()">
+            </div>
+            <button class="btn-green" onclick="confirmarEjecucion()">Confirmar y guardar</button>
+            <button class="btn-red" onclick="cancelarEjecucion()">Cancelar</button>
+        </div>
+        <div class="tendencia-resumen">
+            <div class="tendencia-chip">Diaria<strong id="tendencia-diaria">Lateral</strong></div>
+            <div class="tendencia-chip">Semanal<strong id="tendencia-semanal">Lateral</strong></div>
+            <div class="tendencia-chip">Mensual<strong id="tendencia-mensual">Lateral</strong></div>
+            <div class="tendencia-chip">Puntuación<strong id="tendencia-puntuacion">0,00</strong></div>
+        </div>
+        <p id="texto-sugerencia" class="sugerencia"></p>
+        <p id="detalle-recomendacion" class="nota-operativa"></p>
+    </div>
+
+    <!-- ÓRDENES ACTIVAS Y PENDIENTES DE LA PESTAÑA SELECCIONADA -->
+    <div class="seccion">
+        <h2 id="titulo-tabla-ordenes">📋 Órdenes de Solana</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Tipo</th>
+                    <th>Cantidad / Importe</th>
+                    <th>Precio Objetivo</th>
+                    <th>Total USDC (bruto)</th>
+                    <th>Estado</th>
+                    <th>Acción</th>
+                </tr>
+            </thead>
+            <tbody id="tabla-ordenes"></tbody>
+        </table>
+    </div>
+
+    <!-- AÑADIR NUEVA OPERACIÓN MANUAL -->
+    <div class="seccion">
+        <h2>➕ Registrar orden manual</h2>
+        <small style="color:var(--subtext)">La orden se guarda aquí como pendiente; no se envía ni se ejecuta automáticamente en el exchange. El saldo se reserva al marcarla “En curso”.</small>
+        <div class="form-linea">
+            <div class="campo-manual">
+                <label for="nuevo-tipo">Tipo de orden</label>
+                <select id="nuevo-tipo">
+                    <option value="Compra">Compra limit</option>
+                    <option value="Venta">Venta limit</option>
+                </select>
+                <small class="ayuda-campo">Compra: usar USDC para adquirir el activo. Venta: vender el activo disponible.</small>
+            </div>
+            <div class="campo-manual">
+                <label for="nuevo-monto">Cantidad del activo</label>
+                <input type="number" id="nuevo-monto" placeholder="Ej. 0.25" min="0.0001" step="0.0001">
+                <small class="ayuda-campo">Unidades de la moneda seleccionada, no euros ni USDC. Ejemplo: 0.25 SOL.</small>
+            </div>
+            <div class="campo-manual">
+                <label for="nuevo-precio">Precio límite por unidad (USDC)</label>
+                <input type="number" id="nuevo-precio" placeholder="Ej. 145.50" min="0.01" step="0.01">
+                <small class="ayuda-campo">Precio de una unidad. El importe aproximado será cantidad × precio, más comisión en compras.</small>
+            </div>
+            <div class="acciones-orden">
+                <button onclick="validarOrdenManual()">🔍 Comprobar saldo y precio</button>
+                <button class="btn-green" onclick="agregarOrdenManual()">Añadir como pendiente</button>
+            </div>
+        </div>
+        <div class="form-linea">
+            <button onclick="generarMallaSugerencias()">⚡ Generar malla de sugerencias</button>
+            <span class="nota-operativa">Crea hasta 5 compras y 5 ventas en estado pendiente, sin reservar saldo.</span>
+        </div>
+    </div>
+
+    <!-- HISTORIAL DE EJECUCIONES -->
+    <div class="seccion">
+        <h2 id="titulo-tabla-historial">📜 Historial de Ejecuciones de Solana</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Tipo</th>
+                    <th>Cantidad / Importe</th>
+                    <th>Precio USDC</th>
+                    <th>Impacto USDC (neto)</th>
+                    <th>Fecha</th>
+                    <th>Acción</th>
+                </tr>
+            </thead>
+            <tbody id="tabla-historial"></tbody>
+        </table>
+    </div>
+
+    <script>
+    // CONFIGURACIÓN INICIAL DE LA BASE DE DATOS
+    const bbddInicial = {
+        usdcCapitalTotal: 0,
+        usdcIngresadoTotal: 0,
+        eurosIngresadosTotal: 0,
+        eurosRetiradosTotal: 0,
+        comisionPorcentaje: 0.25,
+        rebalancePorcentaje: {
+            SOL: 12,
+            HYPE: 20,
+            BNB: 8,
+            FET: 12,
+            SUI: 12
+        },
+        tendencia: {
+            SOL: { diaria: "Lateral", semanal: "Lateral", mensual: "Lateral" },
+            HYPE: { diaria: "Lateral", semanal: "Lateral", mensual: "Lateral" },
+            BNB: { diaria: "Lateral", semanal: "Lateral", mensual: "Lateral" },
+            FET: { diaria: "Lateral", semanal: "Lateral", mensual: "Lateral" },
+            SUI: { diaria: "Lateral", semanal: "Lateral", mensual: "Lateral" }
+        },
+        pestanaActiva: "SOL",
+        cryptos: {
+            SOL: {
+                libre: 0,
+                staking: 0,
+                ordenes: [],
+                historial: []
+            },
+            HYPE: {
+                libre: 0,
+                ordenes: [],
+                historial: []
+            },
+            BNB: {
+                libre: 0.00,
+                ordenes: [],
+                historial: []
+            },
+            FET: {
+                libre: 0,
+                staking: 0,
+                ordenes: [],
+                historial: []
+            },
+            SUI: {
+                libre: 0,
+                staking: 0,
+                ordenes: [],
+                historial: []
+            }
+        }
+    };
+
+    const datosV2 = JSON.parse(localStorage.getItem('solana_db_v2'));
+    const datosLegacy = JSON.parse(localStorage.getItem('solana_db'));
+    const dbDesdeLegacy = datosLegacy ? {
+        usdcCapitalTotal: 568.92,
+        pestanaActiva: "SOL",
+        cryptos: {
+            SOL: {
+                libre: Number(datosLegacy.saldos?.solLibre) || 0,
+                ordenes: (datosLegacy.ordenes || []).map(o => ({
+                    id: o.id,
+                    tipo: o.tipo,
+                    cantidad: o.sol,
+                    precio: o.precio,
+                    estado: o.estado
+                })),
+                historial: (datosLegacy.historial || []).map(h => ({
+                    tipo: h.tipo,
+                    cantidad: h.sol,
+                    precio: h.precio,
+                    fecha: h.fecha,
+                    ordenOriginal: h.ordenOriginal ? {
+                        id: h.ordenOriginal.id,
+                        tipo: h.ordenOriginal.tipo,
+                        cantidad: h.ordenOriginal.sol,
+                        precio: h.ordenOriginal.precio,
+                        estado: h.ordenOriginal.estado
+                    } : null,
+                    ordenGeneradaId: h.ordenGeneradaId
+                }))
+            },
+            HYPE: JSON.parse(JSON.stringify(bbddInicial.cryptos.HYPE)),
+            BNB: JSON.parse(JSON.stringify(bbddInicial.cryptos.BNB)),
+            FET: JSON.parse(JSON.stringify(bbddInicial.cryptos.FET)),
+            SUI: JSON.parse(JSON.stringify(bbddInicial.cryptos.SUI))
+        }
+    } : null;
+    let db = datosV2 || dbDesdeLegacy || JSON.parse(JSON.stringify(bbddInicial));
+    let ejecucionPendiente = null;
+
+    Object.keys(bbddInicial.cryptos).forEach(sym => {
+        if (!db.cryptos) db.cryptos = {};
+        if (!db.cryptos[sym]) {
+            db.cryptos[sym] = JSON.parse(JSON.stringify(bbddInicial.cryptos[sym]));
+        }
+        if (!Number.isFinite(db.cryptos[sym].libre)) {
+            db.cryptos[sym].libre = bbddInicial.cryptos[sym].libre;
+        }
+        if (!Number.isFinite(db.cryptos[sym].staking)) db.cryptos[sym].staking = 0;
+        if (!Array.isArray(db.cryptos[sym].ordenes)) db.cryptos[sym].ordenes = [];
+        if (!Array.isArray(db.cryptos[sym].historial)) db.cryptos[sym].historial = [];
+    });
+
+    const migracionStakingSolInicial = 'saldo_sol_inicial_en_staking_2026_09_23';
+    if (!db.migraciones || !db.migraciones[migracionStakingSolInicial]) {
+        const sol = db.cryptos.SOL;
+        if (sol.staking === 0 && Math.abs(sol.libre - 10.01) < 0.00000001) {
+            sol.libre = 0;
+            sol.staking = 10.01;
+        }
+        db.migraciones = db.migraciones || {};
+        db.migraciones[migracionStakingSolInicial] = true;
+        localStorage.setItem('solana_db_v2', JSON.stringify(db));
+    }
+    if (!db.cryptos[db.pestanaActiva]) db.pestanaActiva = "SOL";
+    if (!Number.isFinite(db.usdcIngresadoTotal)) db.usdcIngresadoTotal = db.usdcCapitalTotal;
+    if (!Number.isFinite(db.eurosIngresadosTotal)) db.eurosIngresadosTotal = 2500;
+    if (!Number.isFinite(db.eurosRetiradosTotal)) db.eurosRetiradosTotal = 0;
+    if (!db.rebalancePorcentaje || typeof db.rebalancePorcentaje !== 'object') db.rebalancePorcentaje = {};
+    Object.keys(bbddInicial.cryptos).forEach(sym => {
+        if (!Number.isFinite(db.rebalancePorcentaje[sym])) {
+            db.rebalancePorcentaje[sym] = bbddInicial.rebalancePorcentaje[sym];
+        }
+        db.rebalancePorcentaje[sym] = Math.min(200, Math.max(0.01, db.rebalancePorcentaje[sym]));
+    });
+    if (!db.tendencia || typeof db.tendencia !== 'object') db.tendencia = {};
+    Object.keys(bbddInicial.cryptos).forEach(sym => {
+        if (!db.tendencia[sym] || typeof db.tendencia[sym] !== 'object') {
+            db.tendencia[sym] = { ...bbddInicial.tendencia[sym] };
+        }
+        ['diaria', 'semanal', 'mensual'].forEach(marco => {
+            if (!['Alcista', 'Lateral', 'Bajista'].includes(db.tendencia[sym][marco])) {
+                db.tendencia[sym][marco] = 'Lateral';
+            }
+        });
+    });
+    const migracionRebalanceoPorActivo = 'rebalanceo_por_activo_2026_09_23';
+    if (!db.migraciones || !db.migraciones[migracionRebalanceoPorActivo]) {
+        const configuracionAnterior = Object.values(db.rebalancePorcentaje).every(porcentaje => porcentaje === 12);
+        if (configuracionAnterior) {
+            db.rebalancePorcentaje.SOL = 12;
+            db.rebalancePorcentaje.HYPE = 20;
+            db.rebalancePorcentaje.BNB = 8;
+        }
+        db.migraciones = db.migraciones || {};
+        db.migraciones[migracionRebalanceoPorActivo] = true;
+        localStorage.setItem('solana_db_v2', JSON.stringify(db));
+    }
+    if (!Number.isFinite(db.comisionPorcentaje)) db.comisionPorcentaje = 0.25;
+    db.comisionPorcentaje = Math.min(99.99, Math.max(0, db.comisionPorcentaje));
+
+    const comisionCoinbase025 = 'comision_coinbase_025_2026_09_23';
+    if (!db.migraciones || !db.migraciones[comisionCoinbase025]) {
+        if (db.comisionPorcentaje === 0) db.comisionPorcentaje = 0.25;
+        db.migraciones = db.migraciones || {};
+        db.migraciones[comisionCoinbase025] = true;
+        localStorage.setItem('solana_db_v2', JSON.stringify(db));
+    }
+
+    const migracionHype = 'primera_compra_hype_2026_09_23';
+    if (!db.migraciones || !db.migraciones[migracionHype]) {
+        const ordenSolanaRetirada = db.cryptos.SOL.ordenes.find(o =>
+            o.tipo === "Compra" && o.cantidad === 2.15 && o.precio === 78
+        );
+        const existeCompraHype = db.cryptos.HYPE.ordenes.some(o =>
+            o.tipo === "Compra" && o.cantidad === 1.9632 && o.precio === 85.42
+        );
+
+        if (ordenSolanaRetirada) {
+            const ids = Object.values(db.cryptos)
+                .flatMap(crypto => crypto.ordenes)
+                .map(o => Number(o.id))
+                .filter(Number.isFinite);
+            const nuevoId = Math.max(0, ...ids) + 1;
+            db.cryptos.SOL.ordenes = db.cryptos.SOL.ordenes.filter(o => o !== ordenSolanaRetirada);
+            if (!existeCompraHype) {
+                db.cryptos.HYPE.ordenes.push({
+                    id: nuevoId,
+                    tipo: "Compra",
+                    cantidad: 1.9632,
+                    precio: 85.42,
+                    estado: "En Curso"
+                });
+            }
+        }
+
+        db.migraciones = db.migraciones || {};
+        db.migraciones[migracionHype] = true;
+        localStorage.setItem('solana_db_v2', JSON.stringify(db));
+    }
+
+    const correccionSaldoHype = 'saldo_inicial_hype_corregido_2026_09_23';
+    if (!db.migraciones || !db.migraciones[correccionSaldoHype]) {
+        let saldoRealHype = 0;
+        (db.cryptos.HYPE.historial || []).forEach(h => {
+            saldoRealHype += h.tipo === "Compra" ? h.cantidad : -h.cantidad;
+        });
+        db.cryptos.HYPE.libre = Math.max(0, Number(saldoRealHype.toFixed(4)));
+        db.cryptos.HYPE.ordenes = db.cryptos.HYPE.ordenes.filter(o => o.tipo !== "Venta");
+
+        if (db.cryptos.HYPE.libre > 0) {
+            const ids = Object.values(db.cryptos)
+                .flatMap(crypto => crypto.ordenes)
+                .map(o => Number(o.id))
+                .filter(Number.isFinite);
+            const siguienteId = Math.max(0, ...ids) + 1;
+            db.cryptos.HYPE.ordenes.push({
+                id: siguienteId,
+                tipo: "Venta",
+                cantidad: db.cryptos.HYPE.libre,
+                precio: 116.59,
+                estado: "Pendiente"
+            });
+        }
+
+        db.migraciones = db.migraciones || {};
+        db.migraciones[correccionSaldoHype] = true;
+        localStorage.setItem('solana_db_v2', JSON.stringify(db));
+    }
+
+    const estrategiaHype = 'escalera_spot_hype_2026_09_23';
+    if (!db.migraciones || !db.migraciones[estrategiaHype]) {
+        const ventasHypeExistentes = db.cryptos.HYPE.ordenes.filter(o => o.tipo === "Venta");
+        if (ventasHypeExistentes.length === 0 && db.cryptos.HYPE.libre > 0) {
+            const ids = Object.values(db.cryptos)
+                .flatMap(crypto => crypto.ordenes)
+                .map(o => Number(o.id))
+                .filter(Number.isFinite);
+            const siguienteId = Math.max(0, ...ids) + 1;
+            db.cryptos.HYPE.ordenes.push(
+                { id: siguienteId, tipo: "Venta", cantidad: 3.1677, precio: 106.88, estado: "En Curso" },
+                { id: siguienteId + 1, tipo: "Venta", cantidad: 4.4348, precio: 116.59, estado: "En Curso" },
+                { id: siguienteId + 2, tipo: "Venta", cantidad: 5.0684, precio: 126.31, estado: "En Curso" }
+            );
+        }
+        db.migraciones = db.migraciones || {};
+        db.migraciones[estrategiaHype] = true;
+        localStorage.setItem('solana_db_v2', JSON.stringify(db));
+    }
+
+    const consolidacionHype = 'consolidacion_ventas_hype_2026_09_23';
+    if (!db.migraciones || !db.migraciones[consolidacionHype]) {
+        const ventasHype = db.cryptos.HYPE.ordenes.filter(o => o.tipo === "Venta");
+        const preciosAnteriores = [95.67, 105.92, 106.88, 116.17, 116.59, 126.31];
+        const esEscaleraAnterior = ventasHype.length === 6 && ventasHype.every(o =>
+            preciosAnteriores.includes(o.precio)
+        );
+
+        if (esEscaleraAnterior) {
+            const ids = Object.values(db.cryptos)
+                .flatMap(crypto => crypto.ordenes)
+                .map(o => Number(o.id))
+                .filter(Number.isFinite);
+            const siguienteId = Math.max(0, ...ids) + 1;
+            db.cryptos.HYPE.ordenes = db.cryptos.HYPE.ordenes.filter(o => o.tipo !== "Venta");
+            db.cryptos.HYPE.ordenes.push(
+                { id: siguienteId, tipo: "Venta", cantidad: 3.6585, precio: 106.88, estado: "Pendiente" },
+                { id: siguienteId + 1, tipo: "Venta", cantidad: 3.6585, precio: 116.59, estado: "Pendiente" },
+                { id: siguienteId + 2, tipo: "Venta", cantidad: 3.6585, precio: 126.31, estado: "Pendiente" },
+                { id: siguienteId + 3, tipo: "Venta", cantidad: 3.6586, precio: 136.02, estado: "Pendiente" }
+            );
+        }
+        db.migraciones = db.migraciones || {};
+        db.migraciones[consolidacionHype] = true;
+        localStorage.setItem('solana_db_v2', JSON.stringify(db));
+    }
+
+    const simplificacionHype = 'una_sola_orden_hype_2026_09_23';
+    if (!db.migraciones || !db.migraciones[simplificacionHype]) {
+        const ventasHype = db.cryptos.HYPE.ordenes.filter(o => o.tipo === "Venta");
+        const preciosEscalera = [106.88, 116.59, 126.31, 136.02];
+        const esEscaleraGenerada = ventasHype.length === 4 && ventasHype.every(o =>
+            preciosEscalera.includes(o.precio)
+        );
+
+        if (esEscaleraGenerada) {
+            const id = Math.max(0, ...Object.values(db.cryptos)
+                .flatMap(crypto => crypto.ordenes)
+                .map(o => Number(o.id))
+                .filter(Number.isFinite)) + 1;
+            db.cryptos.HYPE.ordenes = db.cryptos.HYPE.ordenes.filter(o => o.tipo !== "Venta");
+            if (db.cryptos.HYPE.libre > 0) {
+                db.cryptos.HYPE.ordenes.push({
+                    id,
+                    tipo: "Venta",
+                    cantidad: db.cryptos.HYPE.libre,
+                    precio: 116.59,
+                    estado: "Pendiente"
+                });
+            }
+        }
+        db.migraciones = db.migraciones || {};
+        db.migraciones[simplificacionHype] = true;
+        localStorage.setItem('solana_db_v2', JSON.stringify(db));
+    }
+
+    const limpiezaOrdenesHype = 'limpieza_ordenes_hype_2026_09_23';
+    if (!db.migraciones || !db.migraciones[limpiezaOrdenesHype]) {
+        const hype = db.cryptos.HYPE;
+        const comprasHype = hype.ordenes.filter(o => o.tipo === "Compra");
+        const ventasHype = hype.ordenes.filter(o => o.tipo === "Venta");
+
+        // Conserva una sola orden activa de cada lado; elimina tramos heredados.
+        if (comprasHype.length > 1) {
+            hype.ordenes = hype.ordenes.filter(o => o.tipo !== "Compra" || o.id === comprasHype[0].id);
+        }
+        if (ventasHype.length > 1) {
+            const ventaPrincipal = ventasHype.reduce((mejor, venta) =>
+                venta.precio > mejor.precio ? venta : mejor
+            );
+            hype.ordenes = hype.ordenes.filter(o => o.tipo !== "Venta" || o.id === ventaPrincipal.id);
+        }
+
+        db.migraciones = db.migraciones || {};
+        db.migraciones[limpiezaOrdenesHype] = true;
+        localStorage.setItem('solana_db_v2', JSON.stringify(db));
+    }
+
+    const nivelesHype = 'tres_niveles_hype_2026_09_23';
+    if (!db.migraciones || !db.migraciones[nivelesHype]) {
+        const hype = db.cryptos.HYPE;
+        const ids = Object.values(db.cryptos)
+            .flatMap(crypto => crypto.ordenes)
+            .map(o => Number(o.id))
+            .filter(Number.isFinite);
+        const siguienteId = Math.max(0, ...ids) + 1;
+        const ventasExistentes = hype.ordenes.filter(o => o.tipo === "Venta");
+
+        if (ventasExistentes.length > 0 && hype.libre > 0) {
+            hype.ordenes = hype.ordenes.filter(o => o.tipo !== "Venta");
+            const cantidades = [
+                Number((hype.libre * 0.40).toFixed(4)),
+                Number((hype.libre * 0.35).toFixed(4)),
+                Number((hype.libre - hype.libre * 0.40 - hype.libre * 0.35).toFixed(4))
+            ];
+            [98.23, 111.05, 123.86].forEach((precio, index) => {
+                hype.ordenes.push({
+                    id: siguienteId + index,
+                    tipo: "Venta",
+                    cantidad: cantidades[index],
+                    precio,
+                    estado: "Pendiente"
+                });
+            });
+        }
+
+        db.migraciones = db.migraciones || {};
+        db.migraciones[nivelesHype] = true;
+        localStorage.setItem('solana_db_v2', JSON.stringify(db));
+    }
+
+    const limiteTresOrdenesHype = 'limite_tres_ordenes_hype_2026_09_23';
+    if (!db.migraciones || !db.migraciones[limiteTresOrdenesHype]) {
+        const hype = db.cryptos.HYPE;
+        ["Compra", "Venta"].forEach(tipo => {
+            const ordenesTipo = hype.ordenes.filter(o => o.tipo === tipo);
+            const idsConservar = new Set(ordenesTipo.slice(0, 3).map(o => o.id));
+            hype.ordenes = hype.ordenes.filter(o => o.tipo !== tipo || idsConservar.has(o.id));
+        });
+        db.migraciones = db.migraciones || {};
+        db.migraciones[limiteTresOrdenesHype] = true;
+        localStorage.setItem('solana_db_v2', JSON.stringify(db));
+    }
+
+    const ajusteCantidadCompraHype = 'ajuste_cantidad_hype_comision_2026_09_23';
+    if (!db.migraciones || !db.migraciones[ajusteCantidadCompraHype]) {
+        const cantidadAnterior = 1.9632;
+        const cantidadNueva = 1.9583;
+        const hype = db.cryptos.HYPE;
+        const ordenAnterior = hype.ordenes.find(o =>
+            o.tipo === "Compra" && o.precio === 85.42 && o.cantidad === cantidadAnterior
+        );
+
+        if (ordenAnterior) ordenAnterior.cantidad = cantidadNueva;
+
+        (hype.historial || []).forEach(h => {
+            if (h.tipo === "Compra" && h.precio === 85.42 && h.cantidad === cantidadAnterior) {
+                h.cantidad = cantidadNueva;
+            }
+        });
+
+        if (hype.libre > 0 && hype.libre <= cantidadAnterior) {
+            hype.libre = Number((hype.libre - (cantidadAnterior - cantidadNueva)).toFixed(4));
+        }
+
+        db.migraciones = db.migraciones || {};
+        db.migraciones[ajusteCantidadCompraHype] = true;
+        localStorage.setItem('solana_db_v2', JSON.stringify(db));
+    }
+
+    const ajusteCantidadRealHype = 'ajuste_cantidad_real_hype_2026_09_23';
+    if (!db.migraciones || !db.migraciones[ajusteCantidadRealHype]) {
+        const cantidadAnterior = 1.9583;
+        const cantidadNueva = 1.958;
+        const hype = db.cryptos.HYPE;
+        const ordenAnterior = hype.ordenes.find(o =>
+            o.tipo === "Compra" && o.precio === 85.42 && o.cantidad === cantidadAnterior
+        );
+
+        if (ordenAnterior) ordenAnterior.cantidad = cantidadNueva;
+        (hype.historial || []).forEach(h => {
+            if (h.tipo === "Compra" && h.precio === 85.42 && h.cantidad === cantidadAnterior) {
+                h.cantidad = cantidadNueva;
+            }
+        });
+        if (hype.libre > 0 && hype.libre <= cantidadAnterior) {
+            hype.libre = Number((hype.libre - (cantidadAnterior - cantidadNueva)).toFixed(4));
+        }
+
+        db.migraciones = db.migraciones || {};
+        db.migraciones[ajusteCantidadRealHype] = true;
+        localStorage.setItem('solana_db_v2', JSON.stringify(db));
+    }
+
+    const ajusteReservaCompraHype = 'ajuste_reserva_compra_hype_2026_09_23';
+    if (!db.migraciones || !db.migraciones[ajusteReservaCompraHype]) {
+        const ordenHype = db.cryptos.HYPE.ordenes.find(o =>
+            o.tipo === "Compra" && o.precio === 85.42 && o.cantidad === 1.958
+        );
+        if (ordenHype) ordenHype.importeReserva = 167.67049;
+        db.migraciones = db.migraciones || {};
+        db.migraciones[ajusteReservaCompraHype] = true;
+        localStorage.setItem('solana_db_v2', JSON.stringify(db));
+    }
+
+    const ajusteUSDCInicialReal = 'ajuste_usdc_inicial_real_2026_09_23';
+    if (!db.migraciones || !db.migraciones[ajusteUSDCInicialReal]) {
+        if (Math.abs(db.usdcCapitalTotal - 568.92) < 0.00001) {
+            db.usdcCapitalTotal = 569.62586;
+            if (Math.abs(db.usdcIngresadoTotal - 568.92) < 0.00001) {
+                db.usdcIngresadoTotal = 569.62586;
+            }
+        }
+        db.migraciones = db.migraciones || {};
+        db.migraciones[ajusteUSDCInicialReal] = true;
+        localStorage.setItem('solana_db_v2', JSON.stringify(db));
+    }
+
+    function guardarBBDD() {
+        localStorage.setItem('solana_db_v2', JSON.stringify(db));
+        render();
+    }
+
+    function agregarUSDC() {
+        const campo = document.getElementById('ingreso-usdc');
+        const campoEuros = document.getElementById('ingreso-euros');
+        const importe = Number.parseFloat(campo.value);
+        const euros = Number.parseFloat(campoEuros.value);
+
+        if (!Number.isFinite(importe) || importe <= 0 || !Number.isFinite(euros) || euros <= 0) {
+            alert("Introduce los USDC recibidos y los euros pagados, ambos mayores que cero.");
+            return;
+        }
+
+        db.usdcCapitalTotal = Number((db.usdcCapitalTotal + importe).toFixed(2));
+        db.usdcIngresadoTotal = Number((db.usdcIngresadoTotal + importe).toFixed(2));
+        db.eurosIngresadosTotal = Number((db.eurosIngresadosTotal + euros).toFixed(2));
+        campo.value = '';
+        campoEuros.value = '';
+        guardarBBDD();
+    }
+
+    function retirarUSDC() {
+        const campo = document.getElementById('retirada-usdc');
+        const campoEuros = document.getElementById('retirada-euros');
+        const importe = Number.parseFloat(campo.value);
+        const euros = Number.parseFloat(campoEuros.value);
+        const disponible = obtenerUsdcDisponible();
+
+        if (!Number.isFinite(importe) || importe <= 0 || !Number.isFinite(euros) || euros <= 0) {
+            alert("Introduce los USDC retirados y los euros recibidos, ambos mayores que cero.");
+            return;
+        }
+        if (importe > disponible + 0.00000001) {
+            alert(`No puedes retirar ${importe.toFixed(2)} USDC. Solo tienes ${Math.max(0, disponible).toFixed(2)} USDC disponibles.`);
+            return;
+        }
+
+        db.usdcCapitalTotal = Number((db.usdcCapitalTotal - importe).toFixed(2));
+    db.eurosRetiradosTotal = Number((db.eurosRetiradosTotal + euros).toFixed(2));
+        campo.value = '';
+    campoEuros.value = '';
+        guardarBBDD();
+    }
+
+    function guardarComision() {
+        const campo = document.getElementById('comision-porcentaje');
+        const porcentaje = Number.parseFloat(campo.value);
+        if (!Number.isFinite(porcentaje) || porcentaje < 0 || porcentaje >= 100) {
+            alert("Introduce una comisión entre 0% y menos de 100%.");
+            return;
+        }
+        db.comisionPorcentaje = porcentaje;
+        guardarBBDD();
+    }
+
+    function guardarRebalanceo() {
+        const campo = document.getElementById('rebalance-porcentaje');
+        const porcentaje = Number.parseFloat(campo.value);
+        if (!Number.isFinite(porcentaje) || porcentaje <= 0 || porcentaje > 200) {
+            alert('Introduce un objetivo entre 0,01% y 200%.');
+            return;
+        }
+        db.rebalancePorcentaje[db.pestanaActiva] = porcentaje;
+        guardarBBDD();
+    }
+
+    function factorComision() {
+        return 1 - (db.comisionPorcentaje / 100);
+    }
+
+    function importeBruto(orden) {
+        return orden.cantidad * orden.precio;
+    }
+
+    function importeReservado(orden) {
+        return Number.isFinite(orden.importeReserva)
+            ? orden.importeReserva
+            : importeBruto(orden);
+    }
+
+    function costeCompra(orden) {
+        return importeBruto(orden) / factorComision();
+    }
+
+    function importeVentaNeto(orden) {
+        return importeBruto(orden) * factorComision();
+    }
+
+    function calcularPrecioMedio(crypto) {
+        let cantidad = 0;
+        let coste = 0;
+        const historialCronologico = [...(crypto.historial || [])].reverse();
+
+        historialCronologico.forEach(h => {
+            const cantidadOperacion = Number(h.cantidad || 0);
+            if (!Number.isFinite(cantidadOperacion) || cantidadOperacion <= 0) return;
+
+            if (h.tipo === "Compra") {
+                const costeCompraReal = Number.isFinite(h.costeRealUSDC)
+                    ? h.costeRealUSDC
+                    : Number.isFinite(h.importeNeto) ? h.importeNeto : cantidadOperacion * h.precio;
+                cantidad += cantidadOperacion;
+                coste += costeCompraReal;
+            } else if (h.tipo === "Venta" && cantidad > 0) {
+                const cantidadVendida = Math.min(cantidad, cantidadOperacion);
+                const costeReducido = coste * (cantidadVendida / cantidad);
+                cantidad -= cantidadVendida;
+                coste -= costeReducido;
+            }
+        });
+
+        return cantidad > 0 ? coste / cantidad : null;
+    }
+
+    function moverStaking(direccion) {
+        const sym = db.pestanaActiva;
+        const crypto = db.cryptos[sym];
+        const campo = document.getElementById('movimiento-staking');
+        const cantidad = Number.parseFloat(campo.value);
+
+        if (!Number.isFinite(cantidad) || cantidad <= 0) {
+            alert("Introduce una cantidad mayor que cero.");
+            return;
+        }
+        if (direccion === 'entrar' && cantidad > obtenerCriptoDisponible(crypto) + 0.00000001) {
+            alert(`No tienes ${cantidad.toFixed(4)} ${sym} libres para pasar al staking.`);
+            return;
+        }
+        if (direccion === 'salir' && cantidad > crypto.staking + 0.00000001) {
+            alert(`No tienes ${cantidad.toFixed(4)} ${sym} en staking.`);
+            return;
+        }
+
+        crypto.staking = Number((crypto.staking + (direccion === 'entrar' ? cantidad : -cantidad)).toFixed(4));
+        crypto.libre = Number((crypto.libre + (direccion === 'entrar' ? -cantidad : cantidad)).toFixed(4));
+        campo.value = '';
+        guardarBBDD();
+    }
+
+    function pasarAStaking() { moverStaking('entrar'); }
+    function retirarDeStaking() { moverStaking('salir'); }
+
+    function mensajeSaldoCriptoInsuficiente(crypto, sym, necesario, disponible) {
+        const falta = Math.max(0, necesario - Math.max(0, disponible));
+        const puedeSacar = Math.min(falta, crypto.staking);
+        const consejo = puedeSacar > 0
+            ? ` Puedes sacar ${puedeSacar.toFixed(4)} ${sym} del staking para cubrirlo.`
+            : '';
+        return `No tienes suficiente ${sym} operativo. Necesitas ${necesario.toFixed(4)} ${sym}, tienes ${Math.max(0, disponible).toFixed(4)} libres y faltan ${falta.toFixed(4)}.${consejo}`;
+    }
+
+    function obtenerCriptoParaOrden(crypto, orden) {
+        if (orden.tipo === 'Venta' && Number.isFinite(orden.origenOrdenId)) {
+            // Esta venta pertenece al lote de una compra ya ejecutada.
+            // Las reservas antiguas no deben consumir este lote nuevo.
+            return orden.cantidad;
+        }
+        return obtenerCriptoDisponible(crypto, orden);
+    }
+
+    function calcularUsdcBloqueado(ordenExcluir = null) {
+        let total = 0;
+        Object.values(db.cryptos).forEach(crypto => {
+            crypto.ordenes.forEach(o => {
+                if (o !== ordenExcluir && o.estado === "En Curso" && o.tipo === "Compra") {
+                    total += importeReservado(o);
+                }
+            });
+        });
+        return total;
+    }
+
+    function calcularCriptoBloqueada(crypto, ordenExcluir = null) {
+        return crypto.ordenes.reduce((total, o) => {
+            if (o !== ordenExcluir && o.estado === "En Curso" && o.tipo === "Venta") {
+                return total + o.cantidad;
+            }
+            return total;
+        }, 0);
+    }
+
+    function obtenerUsdcDisponible(ordenExcluir = null) {
+        return db.usdcCapitalTotal - calcularUsdcBloqueado(ordenExcluir);
+    }
+
+    function obtenerCriptoDisponible(crypto, ordenExcluir = null) {
+        return crypto.libre - calcularCriptoBloqueada(crypto, ordenExcluir);
+    }
+
+    function calcularCantidadNetaHistorial(crypto) {
+        return (crypto.historial || []).reduce((total, operacion) => {
+            const cantidad = Number(operacion.cantidad);
+            if (!Number.isFinite(cantidad) || cantidad <= 0) return total;
+            return total + (operacion.tipo === 'Compra' ? cantidad : -cantidad);
+        }, 0);
+    }
+
+    function asegurarSaldoIncluyeReservasVenta(crypto) {
+        const saldoBruto = Number.isFinite(crypto.libre) ? crypto.libre : 0;
+        const reservado = calcularCriptoBloqueada(crypto);
+        const disponible = Math.max(0, saldoBruto - reservado);
+        const saldoRespaldadoPorHistorial = Math.max(
+            0,
+            calcularCantidadNetaHistorial(crypto) - (Number(crypto.staking) || 0)
+        );
+        crypto.libre = Math.max(saldoBruto, reservado + disponible, saldoRespaldadoPorHistorial);
+    }
+
+    function cambiarPestana(symbol) {
+        if (!db.cryptos[symbol]) return;
+        db.pestanaActiva = symbol;
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.symbol === symbol);
+        });
+        render(symbol);
+    }
+
+    function render(symbol = db.pestanaActiva) {
+        if (!db.cryptos[symbol]) symbol = 'SOL';
+        db.pestanaActiva = symbol;
+        const sym = symbol;
+        const cryptoActual = db.cryptos[sym];
+        if (!Array.isArray(cryptoActual.ordenes)) cryptoActual.ordenes = [];
+        if (!Array.isArray(cryptoActual.historial)) cryptoActual.historial = [];
+        if (!Number.isFinite(cryptoActual.libre)) cryptoActual.libre = 0;
+        if (!Number.isFinite(cryptoActual.staking)) cryptoActual.staking = 0;
+        const saldoLibreAntesDeReconciliar = cryptoActual.libre;
+        asegurarSaldoIncluyeReservasVenta(cryptoActual);
+        if (cryptoActual.libre > saldoLibreAntesDeReconciliar) {
+            localStorage.setItem('solana_db_v2', JSON.stringify(db));
+        }
+
+        // 1. Recálculo Global de USDC Retenido (únicamente compras en curso)
+        const usdcBloqueadoTotal = calcularUsdcBloqueado();
+
+        if (db.usdcCapitalTotal === undefined) {
+            db.usdcCapitalTotal = 568.92;
+        }
+
+        // USDC Libre real = Capital Total - Retenido activamente en Coinbase
+        const usdcLibreCalculado = Math.max(0, obtenerUsdcDisponible());
+
+        // 2. Recálculo de Cripto Retenida en Ventas "En Curso" para la pestaña activa
+        const criptoBloqueado = calcularCriptoBloqueada(cryptoActual);
+        const criptoDisponible = Math.max(0, obtenerCriptoDisponible(cryptoActual));
+        const precioMedio = calcularPrecioMedio(cryptoActual);
+
+        // 3. Actualizar DOM / Interfaz
+        document.getElementById('label-cripto-libre').innerText = `${sym} Disponible para operar`;
+        document.getElementById('label-cripto-bloqueado').innerText = `${sym} Reservado para ventas`;
+        document.getElementById('cripto-libre').innerText = `${criptoDisponible.toFixed(4)} ${sym}`;
+        document.getElementById('cripto-bloqueado').innerText = `${criptoBloqueado.toFixed(4)} ${sym}`;
+        
+        document.getElementById('usdc-libre').innerText = `$${usdcLibreCalculado.toFixed(2)} USDC`;
+        document.getElementById('usdc-bloqueado-total').innerText = `$${usdcBloqueadoTotal.toFixed(2)} USDC`;
+        document.getElementById('usdc-capital-total').innerText = `$${db.usdcCapitalTotal.toFixed(2)} USDC`;
+        document.getElementById('usdc-ingresado-total').innerText = `$${db.usdcIngresadoTotal.toFixed(2)} USDC`;
+        document.getElementById('euros-ingresados-total').innerText = `${db.eurosIngresadosTotal.toFixed(2)} EUR`;
+        document.getElementById('euros-retirados-total').innerText = `${db.eurosRetiradosTotal.toFixed(2)} EUR`;
+        document.getElementById('label-cripto-staking').innerText = `${sym} en staking`;
+        document.getElementById('cripto-staking').innerText = `${cryptoActual.staking.toFixed(4)} ${sym}`;
+        document.getElementById('label-precio-medio').innerText = `Precio medio de la posición ${sym}`;
+        document.getElementById('precio-medio').innerText = precioMedio === null
+            ? 'Sin compras'
+            : `${precioMedio.toFixed(2)} USDC`;
+        document.getElementById('comision-porcentaje').value = db.comisionPorcentaje;
+        document.getElementById('rebalance-porcentaje').value = db.rebalancePorcentaje[sym];
+        const tendenciaActual = db.tendencia[sym] || { diaria: 'Lateral', semanal: 'Lateral', mensual: 'Lateral', score: 0 };
+        if (document.getElementById('tendencia-diaria')) {
+            document.getElementById('tendencia-diaria').innerText = tendenciaActual.diaria;
+            document.getElementById('tendencia-semanal').innerText = tendenciaActual.semanal;
+            document.getElementById('tendencia-mensual').innerText = tendenciaActual.mensual;
+            document.getElementById('tendencia-puntuacion').innerText = Number(tendenciaActual.score || 0).toFixed(2);
+        }
+
+        document.getElementById('titulo-tabla-ordenes').innerText = `📋 Órdenes de ${sym}`;
+        document.getElementById('titulo-tabla-historial').innerText = `📜 Historial de Ejecuciones de ${sym}`;
+
+        // 4. Dibujar Tabla de Órdenes
+        const tbody = document.getElementById('tabla-ordenes');
+        tbody.innerHTML = '';
+
+        const compras = cryptoActual.ordenes.filter(o => o.tipo === "Compra").sort((a,b) => b.precio - a.precio);
+        const ventas = cryptoActual.ordenes.filter(o => o.tipo === "Venta").sort((a,b) => a.precio - b.precio);
+
+        const renderFila = (o) => {
+            const index = cryptoActual.ordenes.findIndex(item => item.id === o.id);
+            const totalUSDC = (o.cantidad * o.precio).toFixed(2);
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><strong style="color:${o.tipo === 'Compra' ? '#10b981' : '#c084fc'}">${o.tipo.toUpperCase()}</strong></td>
+                <td>
+                    <strong>${o.cantidad.toFixed(4)} ${sym}</strong> 
+                    <span class="usdc-parens">(${totalUSDC} USDC)</span>
+                </td>
+                <td>${o.precio.toFixed(2)} USDC</td>
+                <td><strong>$${totalUSDC} USDC</strong></td>
+                <td>
+                    <select onchange="cambiarEstado(${index}, this.value)">
+                        <option value="En Curso" ${o.estado === 'En Curso' ? 'selected' : ''}>🔵 En Curso en Coinbase</option>
+                        <option value="Pendiente" ${o.estado === 'Pendiente' ? 'selected' : ''}>${o.sugerida ? '🟡 Sugerida / No enviada' : '🟡 Pendiente de Poner'}</option>
+                        <option value="Completada">🟢 Marcar como COMPLETADA</option>
+                    </select>
+                </td>
+                <td><button onclick="eliminarOrden(${index})" class="btn-red">❌</button></td>
+            `;
+            tbody.appendChild(tr);
+        };
+
+        if(compras.length > 0) {
+            const headerC = document.createElement('tr');
+            headerC.className = 'header-tabla';
+            headerC.innerHTML = `<td colspan="6">🛒 COMPRAS LÍMITE (${sym})</td>`;
+            tbody.appendChild(headerC);
+            compras.forEach(renderFila);
+        }
+
+        if(ventas.length > 0) {
+            const headerV = document.createElement('tr');
+            headerV.className = 'header-tabla';
+            headerV.innerHTML = `<td colspan="6">📈 VENTAS LÍMITE (${sym})</td>`;
+            tbody.appendChild(headerV);
+            ventas.forEach(renderFila);
+        }
+
+        if (compras.length === 0 && ventas.length === 0) {
+            const filaVacia = document.createElement('tr');
+            filaVacia.innerHTML = `<td colspan="6" style="color:var(--subtext)">No hay órdenes registradas para ${sym}.</td>`;
+            tbody.appendChild(filaVacia);
+        }
+
+        // 5. Dibujar Historial
+        const tbodyHist = document.getElementById('tabla-historial');
+        tbodyHist.innerHTML = '';
+        (cryptoActual.historial || []).forEach((h, hIndex) => {
+            const tr = document.createElement('tr');
+            const totalUSDC = (h.cantidad * h.precio).toFixed(2);
+            const impactoUSDC = Number.isFinite(h.importeNeto)
+                ? h.importeNeto.toFixed(2)
+                : totalUSDC;
+            const comisionTexto = Number.isFinite(h.comisionUSDC) && h.comisionUSDC > 0
+                ? ` (comisión: $${h.comisionUSDC.toFixed(2)})`
+                : '';
+            const signo = h.tipo === 'Venta' ? '+' : '-';
+            const colorSigno = h.tipo === 'Venta' ? '#10b981' : '#ef4444';
+
+            tr.innerHTML = `
+                <td><strong style="color:${h.tipo === 'Compra' ? '#10b981' : '#f0abfc'}">${h.tipo.toUpperCase()}</strong></td>
+                <td>
+                    ${h.cantidad.toFixed(4)} ${sym} 
+                    <span class="usdc-parens">(${totalUSDC} USDC)</span>
+                </td>
+                <td>${h.precio.toFixed(2)} USDC</td>
+                <td><strong style="color:${colorSigno}">${signo}$${impactoUSDC} USDC</strong>${comisionTexto}</td>
+                <td><small>${h.fecha}</small></td>
+                <td><button onclick="deshacerEjecucion(${hIndex})" class="btn-warning">↩️ Deshacer</button></td>
+            `;
+            tbodyHist.appendChild(tr);
+        });
+    }
+
+    const mapaCoinGecko = {
+        SOL: 'solana',
+        HYPE: 'hyperliquid',
+        BNB: 'binancecoin',
+        FET: 'fetch-ai',
+        SUI: 'sui'
+    };
+
+    async function obtenerPreciosCoinGecko(simbolo) {
+        const coinId = mapaCoinGecko[simbolo];
+        if (!coinId) return null;
+        try {
+            const respuesta = await fetch(`https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=365`);
+            if (respuesta.status === 429) {
+                console.warn(`Límite de peticiones alcanzado en CoinGecko para ${simbolo}.`);
+                return { error: 'rate_limit' };
+            }
+            if (!respuesta.ok) {
+                console.warn(`CoinGecko respondió HTTP ${respuesta.status} para ${simbolo}.`);
+                return { error: 'http_error', status: respuesta.status };
+            }
+            const datos = await respuesta.json();
+            const precios = Array.isArray(datos.prices) ? datos.prices.map(item => Number(item[1])) : [];
+            return { precios: precios.filter(Number.isFinite) };
+        } catch (error) {
+            console.warn(`No se pudieron sincronizar datos de ${simbolo}:`, error);
+            return { error: 'request_failed' };
+        }
+    }
+
+    function calcularEMA(precios, periodo) {
+        if (!precios || precios.length === 0) return 0;
+        const k = 2 / (periodo + 1);
+        let ema = precios[0];
+        for (let indice = 1; indice < precios.length; indice += 1) {
+            ema = precios[indice] * k + ema * (1 - k);
+        }
+        return ema;
+    }
+
+    function calcularEMAsMarco(precios) {
+        if (!precios || precios.length < 6) return null;
+        const periodoCorto = precios.length >= 21 ? 9 : 3;
+        const periodoLargo = precios.length >= 21 ? 21 : 6;
+        return {
+            corta: calcularEMA(precios, periodoCorto),
+            larga: calcularEMA(precios, periodoLargo)
+        };
+    }
+
+    function calcularScoreMarco(precios) {
+        const emas = calcularEMAsMarco(precios);
+        if (!emas || !emas.larga) return 0;
+        return Math.tanh(((emas.corta - emas.larga) / emas.larga) * 10);
+    }
+
+    function muestrearPrecios(precios, paso) {
+        if (!precios || precios.length === 0) return [];
+        return precios.filter((_, indice) => indice % paso === 0);
+    }
+
+    function calcularRSI(precios, periodo = 14) {
+        if (!precios || precios.length <= periodo) return null;
+        let ganancias = 0;
+        let perdidas = 0;
+        for (let indice = 1; indice <= periodo; indice += 1) {
+            const cambio = precios[indice] - precios[indice - 1];
+            if (cambio > 0) ganancias += cambio;
+            else perdidas -= cambio;
+        }
+        let gananciaMedia = ganancias / periodo;
+        let perdidaMedia = perdidas / periodo;
+        for (let indice = periodo + 1; indice < precios.length; indice += 1) {
+            const cambio = precios[indice] - precios[indice - 1];
+            gananciaMedia = (gananciaMedia * (periodo - 1) + Math.max(0, cambio)) / periodo;
+            perdidaMedia = (perdidaMedia * (periodo - 1) + Math.max(0, -cambio)) / periodo;
+        }
+        if (perdidaMedia === 0) return gananciaMedia === 0 ? 50 : 100;
+        const fuerzaRelativa = gananciaMedia / perdidaMedia;
+        return 100 - 100 / (1 + fuerzaRelativa);
+    }
+
+    function calcularBandasBollinger(precios, periodo = 20, desviaciones = 2) {
+        if (!precios || precios.length < periodo) return null;
+        const muestra = precios.slice(-periodo);
+        const media = muestra.reduce((total, precio) => total + precio, 0) / periodo;
+        const varianza = muestra.reduce((total, precio) => total + (precio - media) ** 2, 0) / periodo;
+        const desviacion = Math.sqrt(varianza);
+        return {
+            inferior: media - desviaciones * desviacion,
+            media,
+            superior: media + desviaciones * desviacion
+        };
+    }
+
+    function etiquetaTendencia(score) {
+        if (score > 0.12) return 'Alcista';
+        if (score < -0.12) return 'Bajista';
+        return 'Lateral';
+    }
+
+    async function obtenerTendenciaAutomatica(simbolo) {
+        const resultadoPrecios = await obtenerPreciosCoinGecko(simbolo);
+        const preciosDiarios = resultadoPrecios && resultadoPrecios.precios;
+        if (!Array.isArray(preciosDiarios) || preciosDiarios.length === 0) {
+            return {
+                diaria: 'Lateral', semanal: 'Lateral', mensual: 'Lateral',
+                score: 0,
+                fallback: true,
+                rateLimited: resultadoPrecios && resultadoPrecios.error === 'rate_limit',
+                errorStatus: resultadoPrecios && resultadoPrecios.status
+            };
+        }
+        const emasDiarias = calcularEMAsMarco(preciosDiarios);
+        const scoreDiario = calcularScoreMarco(preciosDiarios);
+        const scoreSemanal = calcularScoreMarco(muestrearPrecios(preciosDiarios, 7));
+        const scoreMensual = calcularScoreMarco(muestrearPrecios(preciosDiarios, 30));
+        const score = scoreDiario * 0.50 + scoreSemanal * 0.30 + scoreMensual * 0.20;
+        return {
+            diaria: etiquetaTendencia(scoreDiario),
+            semanal: etiquetaTendencia(scoreSemanal),
+            mensual: etiquetaTendencia(scoreMensual),
+            score: Number(score.toFixed(4)),
+            precioActual: preciosDiarios[preciosDiarios.length - 1] || 0,
+            emaCorta: emasDiarias ? emasDiarias.corta : 0,
+            emaLarga: emasDiarias ? emasDiarias.larga : 0,
+            rsi: calcularRSI(preciosDiarios),
+            bollinger: calcularBandasBollinger(preciosDiarios),
+            fallback: false,
+            actualizado: new Date().toLocaleString()
+        };
+    }
+
+    async function sincronizarTendencia() {
+        const simbolo = db.pestanaActiva;
+        const estados = document.querySelectorAll('.estado-sincronizacion');
+        estados.forEach(estado => {
+            estado.innerText = `Sincronizando ${simbolo}...`;
+        });
+        const tendencia = await obtenerTendenciaAutomatica(simbolo);
+        if (tendencia.fallback) {
+            const mensajeEstado = tendencia.rateLimited
+                ? 'CoinGecko alcanzó el límite de peticiones (HTTP 429). Indicadores sin actualizar; se conservan los últimos datos.'
+                : tendencia.errorStatus
+                    ? `CoinGecko respondió HTTP ${tendencia.errorStatus} para ${simbolo}. Indicadores sin actualizar; se conservan los últimos datos.`
+                    : 'No se pudo actualizar CoinGecko. Se conservan los últimos indicadores disponibles.';
+            estados.forEach(estado => {
+                estado.innerText = mensajeEstado;
+            });
+            return;
+        }
+        db.tendencia[simbolo] = tendencia;
+        const mensajeEstado = `Actualizado: ${tendencia.actualizado} desde CoinGecko`;
+        estados.forEach(estado => {
+            estado.innerText = mensajeEstado;
+        });
+        render(simbolo);
+        if (ejecucionPendiente && ejecucionPendiente.sym === simbolo) {
+            completarSegundoNivelSugerido();
+            actualizarTendenciaPanel();
+        }
+        guardarBBDD();
+    }
+
+    function valorTendencia(tendencia) {
+        return tendencia === 'Alcista' ? 1 : tendencia === 'Bajista' ? -1 : 0;
+    }
+
+    function puntuacionTendencia(tendencias) {
+        if (Number.isFinite(tendencias.score)) return tendencias.score;
+        return valorTendencia(tendencias.diaria) * 0.50
+            + valorTendencia(tendencias.semanal) * 0.30
+            + valorTendencia(tendencias.mensual) * 0.20;
+    }
+
+    function porcentajeAjustado(tipo, porcentajeBase, tendencias) {
+        const ajuste = Math.max(-0.30, Math.min(0.30, puntuacionTendencia(tendencias) * 0.30));
+        return tipo === 'Venta'
+            ? porcentajeBase * (1 + ajuste)
+            : porcentajeBase * (1 - ajuste);
+    }
+
+    function factorDistanciaRSI(tipo, rsi) {
+        if (!Number.isFinite(rsi)) return 1;
+        let ajuste = 0;
+        if (tipo === 'Compra') {
+            if (rsi > 65) ajuste = Math.min(0.25, (rsi - 65) / 35 * 0.25);
+            if (rsi < 35) ajuste = -Math.min(0.20, (35 - rsi) / 35 * 0.20);
+        } else {
+            if (rsi < 35) ajuste = Math.min(0.25, (35 - rsi) / 35 * 0.25);
+            if (rsi > 65) ajuste = -Math.min(0.20, (rsi - 65) / 35 * 0.20);
+        }
+        return 1 + ajuste;
+    }
+
+    function mercadoLateral(tendencias) {
+        const score = Number(tendencias && tendencias.score);
+        return Number.isFinite(score) && Math.abs(score) <= 0.12;
+    }
+
+    function ajustarPrecioPorBandas(tipo, precio, tendencias, nivel = 1, pasoPorcentual = 0.02) {
+        const rsi = Number(tendencias.rsi);
+        const bandas = tendencias.bollinger;
+        if (!bandas || !mercadoLateral(tendencias)) return precio;
+        const factorNivel = 1 + Math.max(0, nivel - 1) * Math.max(0, pasoPorcentual);
+        if (tipo === 'Compra' && Number.isFinite(rsi) && rsi <= 35
+            && Number.isFinite(bandas.inferior) && bandas.inferior > 0) {
+            return Math.min(precio, bandas.inferior / factorNivel);
+        }
+        if (tipo === 'Venta' && Number.isFinite(rsi) && rsi >= 65
+            && Number.isFinite(bandas.superior) && bandas.superior > 0) {
+            return Math.max(precio, bandas.superior * factorNivel);
+        }
+        return precio;
+    }
+
+    function sugerirNivel(tipo, crypto, precio, tendencias = { diaria: 'Lateral', semanal: 'Lateral', mensual: 'Lateral' }) {
+        const sym = db.pestanaActiva;
+        const porcentajeBase = db.rebalancePorcentaje[sym] / 100;
+        const porcentaje = porcentajeAjustado(tipo, porcentajeBase, tendencias)
+            * factorDistanciaRSI(tipo, Number(tendencias.rsi));
+        const precioMedio = calcularPrecioMedio(crypto);
+        if (tipo === 'Venta') {
+            const base = precioMedio && precioMedio > precio ? precioMedio : precio;
+            return Number(ajustarPrecioPorBandas(
+                tipo, base * (1 + porcentaje), tendencias
+            ).toFixed(2));
+        }
+        return Number(ajustarPrecioPorBandas(
+            tipo, precio * (1 - porcentaje), tendencias
+        ).toFixed(2));
+    }
+
+    function leerTendenciasPanel() {
+        return { ...db.tendencia[ejecucionPendiente.sym] };
+    }
+
+    function textoContextoTendencia(tendencias, tipoSiguiente) {
+        const marcosMayores = [tendencias.semanal, tendencias.mensual];
+        const hayContextoBajista = marcosMayores.includes('Bajista');
+        const hayContextoAlcista = marcosMayores.includes('Alcista');
+        if (tipoSiguiente === 'Compra' && hayContextoBajista) {
+            return 'Aviso: el contexto semanal o mensual es bajista. La recompra tiene más riesgo de seguir cayendo.';
+        }
+        if (tipoSiguiente === 'Venta' && hayContextoAlcista) {
+            return 'Contexto favorable: el semanal o mensual es alcista. Revisa si quieres dejar correr más la venta.';
+        }
+        return 'Contexto sin conflicto fuerte entre marcos mayores.';
+    }
+
+    function actualizarTendenciaPanel() {
+        if (!ejecucionPendiente) return;
+        const sym = ejecucionPendiente.sym;
+        const crypto = db.cryptos[sym];
+        const orden = crypto.ordenes.find(item => item.id === ejecucionPendiente.ordenId);
+        if (!orden) return;
+        const tendencias = leerTendenciasPanel();
+        const tipoSiguiente = orden.tipo === 'Compra' ? 'Venta' : 'Compra';
+        document.getElementById('ejecucion-nivel-1').value = sugerirNivel(
+            tipoSiguiente,
+            crypto,
+            Number.parseFloat(document.getElementById('ejecucion-precio').value) || orden.precio,
+            tendencias
+        );
+        actualizarRecomendacion();
+    }
+
+    function completarSegundoNivelSugerido() {
+        if (!ejecucionPendiente) return;
+        const sym = ejecucionPendiente.sym;
+        const crypto = db.cryptos[sym];
+        const orden = crypto.ordenes.find(item => item.id === ejecucionPendiente.ordenId);
+        if (!orden) return;
+        const primerNivel = Number.parseFloat(document.getElementById('ejecucion-nivel-1').value);
+        if (!Number.isFinite(primerNivel) || primerNivel <= 0) return;
+        const tipoSiguiente = orden.tipo === 'Compra' ? 'Venta' : 'Compra';
+        const distanciaSegundoNivel = tipoSiguiente === 'Venta' ? 1.08 : 0.92;
+        document.getElementById('ejecucion-nivel-2').value = Number(
+            (primerNivel * distanciaSegundoNivel).toFixed(2)
+        );
+        actualizarRecomendacion();
+    }
+
+    function nivelesDelFormulario() {
+        return [
+            Number.parseFloat(document.getElementById('ejecucion-nivel-1').value),
+            Number.parseFloat(document.getElementById('ejecucion-nivel-2').value)
+        ].filter(nivel => Number.isFinite(nivel) && nivel > 0);
+    }
+
+    function actualizarRecomendacion() {
+        if (!ejecucionPendiente) return;
+        const sym = ejecucionPendiente.sym;
+        const crypto = db.cryptos[sym];
+        const orden = crypto.ordenes.find(item => item.id === ejecucionPendiente.ordenId);
+        const niveles = nivelesDelFormulario();
+        const precio = Number.parseFloat(document.getElementById('ejecucion-precio').value);
+        const cantidad = Number.parseFloat(document.getElementById('ejecucion-cantidad').value);
+        const comision = Number.parseFloat(document.getElementById('ejecucion-comision').value);
+        const tendencias = leerTendenciasPanel();
+        const detalle = document.getElementById('detalle-recomendacion');
+
+        if (!orden || niveles.length === 0 || !Number.isFinite(precio) || !Number.isFinite(cantidad)) {
+            detalle.innerText = 'Añade al menos un nivel para ver cuánto recomienda colocar en cada orden.';
+            return;
+        }
+
+        const tipoSiguiente = orden.tipo === 'Compra' ? 'Venta' : 'Compra';
+        const disponibleUsdc = Math.max(0, obtenerUsdcDisponible(orden));
+        const disponibleCripto = Math.max(0, obtenerCriptoDisponible(crypto, orden));
+        const criptoNueva = orden.tipo === 'Compra' ? cantidad : 0;
+        const totalVenta = Math.min(cantidad, criptoNueva + Math.max(0, disponibleCripto));
+        const totalCompra = orden.tipo === 'Venta'
+            ? Math.min(Math.max(0, cantidad * precio - (Number.isFinite(comision) ? comision : 0)), disponibleUsdc)
+            : 0;
+        const total = tipoSiguiente === 'Venta' ? totalVenta : totalCompra;
+        const cantidadPorNivel = tipoSiguiente === 'Venta' ? total / niveles.length : 0;
+        const usdcPorNivel = tipoSiguiente === 'Compra' ? total / niveles.length : 0;
+        const detalleNiveles = niveles.map((nivel, indice) => {
+            const cantidadNivel = tipoSiguiente === 'Venta'
+                ? cantidadPorNivel
+                : usdcPorNivel / nivel;
+            const importeNivel = tipoSiguiente === 'Venta'
+                ? cantidadNivel * nivel
+                : usdcPorNivel;
+            return `Nivel ${indice + 1}: ${cantidadNivel.toFixed(4)} ${sym} (${importeNivel.toFixed(2)} USDC)`;
+        });
+
+        const faltaCripto = tipoSiguiente === 'Venta'
+            ? orden.tipo === 'Compra'
+                ? 0
+                : Math.max(0, total - Math.max(0, disponibleCripto))
+            : 0;
+        const contextoTendencia = textoContextoTendencia(tendencias, tipoSiguiente);
+        detalle.innerText = tipoSiguiente === 'Venta'
+            ? total > 0
+                ? `Recomendación: repartir ${total.toFixed(4)} ${sym} entre los niveles. ${detalleNiveles.join(' | ')}. ${contextoTendencia}${faltaCripto > 0 ? ` Para poner toda la venta en Coinbase faltan ${faltaCripto.toFixed(4)} ${sym} operativos.` : ''}`
+                : `No hay cantidad suficiente para sugerir una venta nueva.`
+            : `Recomendación: usar ${total.toFixed(2)} USDC entre los niveles. ${detalleNiveles.join(' | ')}. ${contextoTendencia} No se compromete más USDC del disponible.`;
+    }
+
+    function abrirFormularioEjecucion(index) {
+        const sym = db.pestanaActiva;
+        const crypto = db.cryptos[sym];
+        const orden = crypto.ordenes[index];
+        if (!orden) return;
+
+        ejecucionPendiente = { index, sym, ordenId: orden.id };
+        const tipoSiguiente = orden.tipo === 'Compra' ? 'Venta' : 'Compra';
+        const tendencias = db.tendencia[sym];
+        const nivelSugerido = sugerirNivel(tipoSiguiente, crypto, orden.precio, tendencias);
+        document.getElementById('titulo-ejecucion').innerText = `Confirmar ${orden.tipo.toLowerCase()} de ${sym}`;
+        document.getElementById('resumen-ejecucion').innerText =
+            `La orden ya indica ${orden.cantidad.toFixed(4)} ${sym} a ${orden.precio.toFixed(2)} USDC. Corrige solo si el exchange informa otros datos.`;
+        document.getElementById('ejecucion-precio').value = orden.precio;
+        document.getElementById('ejecucion-cantidad').value = orden.cantidad;
+        document.getElementById('ejecucion-comision').value = (importeBruto(orden) * db.comisionPorcentaje / 100).toFixed(2);
+        document.getElementById('label-nivel-1').innerText = tipoSiguiente === 'Venta' ? 'Techo sugerido (opcional)' : 'Soporte sugerido (opcional)';
+        document.getElementById('label-nivel-2').innerText = tipoSiguiente === 'Venta' ? 'Segundo techo (opcional)' : 'Segundo soporte (opcional)';
+        document.getElementById('ejecucion-nivel-1').value = nivelSugerido;
+        document.getElementById('ejecucion-nivel-2').value = '';
+        document.getElementById('tendencia-diaria').innerText = tendencias.diaria;
+        document.getElementById('tendencia-semanal').innerText = tendencias.semanal;
+        document.getElementById('tendencia-mensual').innerText = tendencias.mensual;
+        document.getElementById('tendencia-puntuacion').innerText = Number(tendencias.score || 0).toFixed(2);
+        const puntuacion = puntuacionTendencia(tendencias);
+        const resumenIndicadores = [
+            Number.isFinite(tendencias.rsi) ? `RSI(14): ${tendencias.rsi.toFixed(1)}` : '',
+            tendencias.bollinger ? `Bollinger: ${tendencias.bollinger.inferior.toFixed(2)} / ${tendencias.bollinger.media.toFixed(2)} / ${tendencias.bollinger.superior.toFixed(2)}` : ''
+        ].filter(Boolean).join('. ');
+        document.getElementById('texto-sugerencia').innerText =
+            `Sugerencia inicial: ${nivelSugerido.toFixed(2)} USDC. Puntuación de tendencia: ${puntuacion.toFixed(2)} (diaria 50%, semanal 30%, mensual 20%) sobre el objetivo base del ${db.rebalancePorcentaje[sym].toFixed(2)}%. ${resumenIndicadores}`;
+        document.getElementById('panel-ejecucion').hidden = false;
+        actualizarRecomendacion();
+        document.getElementById('panel-ejecucion').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        sincronizarTendencia();
+    }
+
+    function cancelarEjecucion() {
+        ejecucionPendiente = null;
+        document.getElementById('panel-ejecucion').hidden = true;
+        render();
+    }
+
+    function confirmarEjecucion() {
+        if (!ejecucionPendiente) return;
+        const precio = Number.parseFloat(document.getElementById('ejecucion-precio').value);
+        const cantidad = Number.parseFloat(document.getElementById('ejecucion-cantidad').value);
+        const comision = Number.parseFloat(document.getElementById('ejecucion-comision').value);
+        const niveles = nivelesDelFormulario();
+
+        if (!Number.isFinite(precio) || precio <= 0 || !Number.isFinite(cantidad) || cantidad <= 0 || !Number.isFinite(comision) || comision < 0) {
+            alert('Revisa precio, cantidad y comisión. Deben ser valores válidos.');
+            return;
+        }
+        const contexto = ejecucionPendiente;
+        const datosReales = { precio, cantidad, comision };
+        db.tendencia[contexto.sym] = leerTendenciasPanel();
+        ejecucionPendiente = null;
+        document.getElementById('panel-ejecucion').hidden = true;
+        completarOrden(contexto.sym, contexto.ordenId, datosReales, niveles);
+    }
+
+    function generarOrdenesPorNiveles(crypto, tipo, niveles, importeDisponible, cantidadDisponible, origenOrdenId = null) {
+        if (niveles.length === 0) return [];
+        const cantidadPorTramo = cantidadDisponible / niveles.length;
+        const importePorTramo = importeDisponible / niveles.length;
+        const ids = [];
+
+        niveles.forEach((nivel, indice) => {
+            const cantidad = tipo === 'Venta'
+                ? Number((cantidadPorTramo).toFixed(4))
+                : Number((importePorTramo * factorComision() / nivel).toFixed(4));
+            if (cantidad <= 0) return;
+            const id = Date.now() + indice;
+            crypto.ordenes.push({
+                id,
+                tipo,
+                cantidad,
+                precio: Number(nivel.toFixed(2)),
+                importeReserva: tipo === 'Compra'
+                    ? Number((cantidad * nivel / factorComision()).toFixed(5))
+                    : undefined,
+                origenOrdenId: tipo === 'Venta' ? origenOrdenId : undefined,
+                estado: 'Pendiente'
+            });
+            ids.push(id);
+        });
+        return ids;
+    }
+
+    // CAMBIAR ESTADO Y CREAR ORDEN DE REBALANCEO
+    function cambiarEstado(index, nuevoEstado) {
+        const sym = db.pestanaActiva;
+        const cryptoActual = db.cryptos[sym];
+        const o = cryptoActual.ordenes[index];
+
+        if (!o) return;
+
+        if (nuevoEstado === "En Curso" && o.estado !== "En Curso") {
+            const totalUSDC = o.tipo === "Compra" ? importeReservado(o) : o.cantidad * o.precio;
+            const disponible = o.tipo === "Compra"
+                ? obtenerUsdcDisponible()
+                : obtenerCriptoParaOrden(cryptoActual, o);
+            const necesario = o.tipo === "Compra" ? totalUSDC : o.cantidad;
+
+            if (necesario > disponible + 0.00000001) {
+                alert(o.tipo === "Compra"
+                    ? `No hay suficiente USDC disponible. Necesitas ${totalUSDC.toFixed(2)} USDC y tienes ${Math.max(0, disponible).toFixed(2)} USDC.`
+                    : mensajeSaldoCriptoInsuficiente(cryptoActual, sym, o.cantidad, disponible));
+                render();
+                return;
+            }
+        }
+
+        if (nuevoEstado === "Completada") {
+            abrirFormularioEjecucion(index);
+            return;
+        }
+
+        if (o.tipo === 'Venta' && o.estado === 'En Curso' && nuevoEstado === 'Pendiente') {
+            asegurarSaldoIncluyeReservasVenta(cryptoActual);
+        }
+        o.estado = nuevoEstado;
+        guardarBBDD();
+    }
+
+    function completarOrden(sym, ordenId, datosReales, niveles) {
+        const cryptoActual = db.cryptos[sym];
+        const index = cryptoActual.ordenes.findIndex(orden => orden.id === ordenId);
+        const o = cryptoActual.ordenes[index];
+        if (!o) return;
+
+        let ordenGeneradaId = null;
+        let ordenesGeneradasIds = [];
+        const totalUSDC = datosReales.cantidad * datosReales.precio;
+            const estabaReservada = o.estado === "En Curso";
+            const importeOperacionNeto = o.tipo === "Compra"
+                ? Math.max(0, totalUSDC)
+                : Math.max(0, totalUSDC - datosReales.comision);
+            const costeUSDC = o.tipo === "Compra"
+                ? (Number.isFinite(o.importeReserva) ? o.importeReserva : totalUSDC + datosReales.comision)
+                : totalUSDC;
+            const disponible = o.tipo === "Compra"
+                ? obtenerUsdcDisponible(o)
+                : obtenerCriptoParaOrden(cryptoActual, o);
+            const necesario = o.tipo === "Compra" ? costeUSDC : datosReales.cantidad;
+
+            if (o.tipo === "Venta" && !estabaReservada && datosReales.cantidad > cryptoActual.libre + 0.00000001) {
+                alert(mensajeSaldoCriptoInsuficiente(
+                    cryptoActual,
+                    sym,
+                    datosReales.cantidad,
+                    cryptoActual.libre
+                ));
+                render();
+                return;
+            }
+
+            if (!estabaReservada && necesario > disponible + 0.00000001) {
+                alert(o.tipo === "Compra"
+                    ? "No hay suficiente USDC disponible para completar esta compra."
+                    : mensajeSaldoCriptoInsuficiente(cryptoActual, sym, necesario, disponible));
+                render();
+                return;
+            }
+
+            if (o.tipo === "Compra") {
+                // Aumenta cripto libre y descuenta capital total
+                cryptoActual.libre += datosReales.cantidad;
+                db.usdcCapitalTotal -= costeUSDC;
+                ordenesGeneradasIds = generarOrdenesPorNiveles(
+                    cryptoActual, 'Venta', niveles, 0, datosReales.cantidad, o.id
+                );
+
+            } else if (o.tipo === "Venta") {
+                const totalRecibidoUSDC = importeOperacionNeto;
+
+                // Consume el lote libre si está presente. Una reserva antigua
+                // sobredimensionada no puede volver a dejar el saldo en negativo.
+                if (cryptoActual.libre >= datosReales.cantidad - 0.00000001) {
+                    cryptoActual.libre -= datosReales.cantidad;
+                }
+                db.usdcCapitalTotal += totalRecibidoUSDC;
+                ordenesGeneradasIds = generarOrdenesPorNiveles(
+                    cryptoActual, 'Compra', niveles, totalRecibidoUSDC, 0
+                );
+            }
+
+            // Registrar en historial
+            if (!cryptoActual.historial) cryptoActual.historial = [];
+            cryptoActual.historial.unshift({
+                tipo: o.tipo,
+                cantidad: datosReales.cantidad,
+                precio: datosReales.precio,
+                importeBruto: totalUSDC,
+                importeNeto: importeOperacionNeto,
+                costeRealUSDC: o.tipo === "Compra" ? costeUSDC : undefined,
+                comisionUSDC: datosReales.comision,
+                fecha: new Date().toLocaleString(),
+                ordenOriginal: { ...o },
+                ordenGeneradaId: ordenGeneradaId,
+                ordenesGeneradasIds: ordenesGeneradasIds
+            });
+
+            // Borrar orden ejecutada
+            cryptoActual.ordenes.splice(index, 1);
+        guardarBBDD();
+    }
+
+    // DESHACER CON REVERTIDO GARANTIZADO DE SALDOS
+    function deshacerEjecucion(hIndex) {
+        const sym = db.pestanaActiva;
+        const cryptoActual = db.cryptos[sym];
+        const h = cryptoActual.historial[hIndex];
+
+        if (!h) return;
+
+        const idsGeneradas = Array.isArray(h.ordenesGeneradasIds) && h.ordenesGeneradasIds.length > 0
+            ? h.ordenesGeneradasIds
+            : h.ordenGeneradaId ? [h.ordenGeneradaId] : [];
+        const operacionPosterior = (cryptoActual.historial || []).some((otra, index) =>
+            index !== hIndex && otra.ordenOriginal && idsGeneradas.includes(otra.ordenOriginal.id)
+        );
+        if (operacionPosterior) {
+            alert("No se puede deshacer esta operación porque su orden automática ya fue ejecutada. Deshaz primero la operación posterior.");
+            return;
+        }
+
+        // 1. Revertir cambios de balances
+        if (h.tipo === "Compra") {
+            if (cryptoActual.libre < h.cantidad - 0.00000001) {
+                alert(`No se puede deshacer esta compra porque solo quedan ${Math.max(0, cryptoActual.libre).toFixed(4)} ${sym} libres y habría que retirar ${h.cantidad.toFixed(4)}.`);
+                return;
+            }
+            cryptoActual.libre -= h.cantidad;
+            db.usdcCapitalTotal += Number.isFinite(h.costeRealUSDC)
+                ? h.costeRealUSDC
+                : Number.isFinite(h.importeNeto)
+                    ? h.importeNeto
+                : h.cantidad * h.precio;
+        } else if (h.tipo === "Venta") {
+            cryptoActual.libre += h.cantidad;
+            db.usdcCapitalTotal -= Number.isFinite(h.importeNeto)
+                ? h.importeNeto
+                : h.cantidad * h.precio;
+        }
+
+        // 2. Restaurar la orden original como "En Curso"
+        cryptoActual.ordenes.push({ ...h.ordenOriginal, estado: "En Curso" });
+
+        // 3. Eliminar la orden automática que se generó al completar esta
+        idsGeneradas.forEach(id => {
+            const idxGenerada = cryptoActual.ordenes.findIndex(o => o.id === id);
+            if (idxGenerada !== -1) cryptoActual.ordenes.splice(idxGenerada, 1);
+        });
+
+        // 4. Eliminar la entrada del historial
+        cryptoActual.historial.splice(hIndex, 1);
+        guardarBBDD();
+    }
+
+    function agregarOrdenManual() {
+        const sym = db.pestanaActiva;
+        const tipo = document.getElementById('nuevo-tipo').value;
+        const cantidad = parseFloat(document.getElementById('nuevo-monto').value);
+        const precio = parseFloat(document.getElementById('nuevo-precio').value);
+
+        if (!Number.isFinite(cantidad) || cantidad <= 0 || !Number.isFinite(precio) || precio <= 0) {
+            return alert("Introduce una cantidad y un precio mayores que cero.");
+        }
+
+        db.cryptos[sym].ordenes.push({ 
+            id: Date.now(), tipo, cantidad, precio, estado: "Pendiente" 
+        });
+
+        document.getElementById('nuevo-monto').value = '';
+        document.getElementById('nuevo-precio').value = '';
+
+        guardarBBDD();
+    }
+
+    function recomendacionPrecioEMA(tipo, precio, tendencia) {
+        const emaCorta = Number(tendencia && tendencia.emaCorta);
+        const emaLarga = Number(tendencia && tendencia.emaLarga);
+        if (tendencia?.fallback || !Number.isFinite(emaCorta) || emaCorta <= 0
+            || !Number.isFinite(emaLarga) || emaLarga <= 0) {
+            return 'Sin EMA sincronizada: pulsa “Sincronizar análisis de mercado” para obtener una referencia.';
+        }
+
+        const esCompra = tipo === 'Compra';
+        let nivelObjetivo = esCompra
+            ? Math.min(emaCorta, emaLarga)
+            : Math.max(emaCorta, emaLarga);
+        const rsi = Number(tendencia.rsi);
+        const bandas = tendencia.bollinger;
+        let referencia = 'EMA';
+        if (bandas && mercadoLateral(tendencia) && esCompra && Number.isFinite(rsi) && rsi <= 35
+            && Number.isFinite(bandas.inferior) && bandas.inferior > 0) {
+            nivelObjetivo = Math.min(nivelObjetivo, bandas.inferior);
+            referencia = 'EMA y Bollinger lateral';
+        }
+        if (bandas && mercadoLateral(tendencia) && !esCompra && Number.isFinite(rsi) && rsi >= 65
+            && Number.isFinite(bandas.superior) && bandas.superior > 0) {
+            nivelObjetivo = Math.max(nivelObjetivo, bandas.superior);
+            referencia = 'EMA y Bollinger lateral';
+        }
+        const precioFavorable = esCompra ? precio <= nivelObjetivo : precio >= nivelObjetivo;
+        const accion = esCompra ? 'baje' : 'suba';
+        const tipoOrden = esCompra ? 'compra' : 'venta';
+
+        return precioFavorable
+            ? `Buen precio de ${tipoOrden}: ${precio.toFixed(2)} USDC está ${esCompra ? 'en o por debajo' : 'en o por encima'} de la referencia ${referencia} (${nivelObjetivo.toFixed(2)}).`
+            : `Espera a que ${accion} a ${nivelObjetivo.toFixed(2)} USDC para una ${tipoOrden} favorable según ${referencia}.`;
+    }
+
+    function validarOrdenManual() {
+        const sym = db.pestanaActiva;
+        const crypto = db.cryptos[sym];
+        const tipo = document.getElementById('nuevo-tipo').value;
+        const cantidad = Number.parseFloat(document.getElementById('nuevo-monto').value);
+        const precio = Number.parseFloat(document.getElementById('nuevo-precio').value);
+        const recomendacionEMA = recomendacionPrecioEMA(tipo, precio, db.tendencia[sym]);
+
+        if (!Number.isFinite(cantidad) || cantidad <= 0 || !Number.isFinite(precio) || precio <= 0) {
+            alert('Introduce una cantidad y un precio válidos antes de comprobar la orden.');
+            return;
+        }
+
+        if (tipo === 'Compra') {
+            const costeEstimado = cantidad * precio / factorComision();
+            const disponible = Math.max(0, obtenerUsdcDisponible());
+            alert(costeEstimado <= disponible + 0.00000001
+                ? `Orden viable: necesitas ${costeEstimado.toFixed(2)} USDC y tienes ${disponible.toFixed(2)} disponibles. ${recomendacionEMA}`
+                : `Orden no viable: necesitas ${costeEstimado.toFixed(2)} USDC y solo tienes ${disponible.toFixed(2)} disponibles. ${recomendacionEMA}`);
+            return;
+        }
+
+        const disponibleCripto = Math.max(0, obtenerCriptoDisponible(crypto));
+        const precioMedio = calcularPrecioMedio(crypto);
+        const avisoPrecio = precioMedio !== null && precio < precioMedio
+            ? ` Aviso: está por debajo de tu precio medio (${precioMedio.toFixed(2)}).`
+            : '';
+        alert(cantidad <= disponibleCripto + 0.00000001
+            ? `Orden viable: tienes ${disponibleCripto.toFixed(4)} ${sym} disponibles.${avisoPrecio} ${recomendacionEMA}`
+            : `Orden no viable: necesitas ${cantidad.toFixed(4)} ${sym} y solo tienes ${disponibleCripto.toFixed(4)}.${avisoPrecio} ${recomendacionEMA}`);
+    }
+
+    function siguienteIdOrden() {
+        return Math.max(0, ...Object.values(db.cryptos)
+            .flatMap(crypto => crypto.ordenes)
+            .map(orden => Number(orden.id))
+            .filter(Number.isFinite)) + 1;
+    }
+
+    function generarMallaSugerencias() {
+        const sym = db.pestanaActiva;
+        const crypto = db.cryptos[sym];
+        const tendencia = db.tendencia[sym] || {};
+        const precioActual = Number(tendencia.precioActual);
+        const cantidadNiveles = 5;
+        if (!Number.isFinite(precioActual) || precioActual <= 0) {
+            alert('Sin precio actual sincronizado. Pulsa primero “Sincronizar análisis de mercado”.');
+            return;
+        }
+
+        const porcentajeBase = db.rebalancePorcentaje[sym] / 100;
+        const puntuacion = puntuacionTendencia(tendencia);
+        const pasoBase = Math.max(0.01, porcentajeBase * (1 - puntuacion * 0.3));
+        const pasoCompra = pasoBase * factorDistanciaRSI('Compra', Number(tendencia.rsi));
+        const pasoVenta = pasoBase * factorDistanciaRSI('Venta', Number(tendencia.rsi));
+        const usdcDisponible = Math.max(0, obtenerUsdcDisponible());
+        const comprasExistentes = crypto.ordenes.filter(orden => orden.tipo === 'Compra').length;
+        const ventasExistentes = crypto.ordenes.filter(orden => orden.tipo === 'Venta').length;
+        const nivelesCompra = Math.max(0, Math.min(cantidadNiveles, 5 - comprasExistentes));
+        const nivelesVenta = Math.max(0, Math.min(cantidadNiveles, 5 - ventasExistentes));
+        const ids = [];
+        const presupuestoPorCompra = nivelesCompra > 0 ? usdcDisponible / nivelesCompra : 0;
+        let siguienteId = siguienteIdOrden();
+
+        for (let indice = 1; indice <= nivelesCompra; indice += 1) {
+            const precioBase = precioActual * (1 - pasoCompra * indice);
+            const precio = Number(ajustarPrecioPorBandas(
+                'Compra', precioBase, tendencia, indice, pasoCompra
+            ).toFixed(2));
+            if (precio <= 0) continue;
+            const cantidad = Number((presupuestoPorCompra * factorComision() / precio).toFixed(4));
+            if (cantidad <= 0) continue;
+            crypto.ordenes.push({
+                id: siguienteId++, tipo: 'Compra', cantidad, precio,
+                importeReserva: undefined, estado: 'Pendiente', sugerida: true
+            });
+            ids.push(crypto.ordenes[crypto.ordenes.length - 1].id);
+        }
+
+        const disponibleVenta = Math.max(0, obtenerCriptoDisponible(crypto));
+        const precioMedio = calcularPrecioMedio(crypto);
+        const baseVenta = precioMedio || precioActual;
+        const cantidadPorVenta = nivelesVenta > 0 ? disponibleVenta / nivelesVenta : 0;
+        for (let indice = 1; indice <= nivelesVenta; indice += 1) {
+            const precioBase = baseVenta * (1 + pasoVenta * indice);
+            const precio = Number(ajustarPrecioPorBandas(
+                'Venta', precioBase, tendencia, indice, pasoVenta
+            ).toFixed(2));
+            const cantidad = Number(cantidadPorVenta.toFixed(4));
+            if (cantidad <= 0) continue;
+            crypto.ordenes.push({
+                id: siguienteId++, tipo: 'Venta', cantidad, precio,
+                estado: 'Pendiente', sugerida: true
+            });
+            ids.push(crypto.ordenes[crypto.ordenes.length - 1].id);
+        }
+
+        guardarBBDD();
+        alert(`Malla creada: ${ids.length} órdenes sugeridas en ${sym}. Siguen pendientes y no reservan saldo.`);
+    }
+
+    function eliminarOrden(index) {
+        const sym = db.pestanaActiva;
+        const crypto = db.cryptos[sym];
+        const orden = crypto.ordenes[index];
+        if (!orden) return;
+
+        const ventaEnCurso = orden.tipo === 'Venta' && orden.estado === 'En Curso';
+        if (ventaEnCurso && !confirm(
+            `Esta venta sigue marcada En Curso. Cancélala también en Coinbase antes de quitarla aquí. ¿Continuar?`
+        )) return;
+
+        if (ventaEnCurso) asegurarSaldoIncluyeReservasVenta(crypto);
+        const disponibleAntes = Math.max(0, obtenerCriptoDisponible(crypto));
+        crypto.ordenes.splice(index, 1);
+        const disponibleDespues = Math.max(0, obtenerCriptoDisponible(crypto));
+        guardarBBDD();
+
+        if (orden.tipo === 'Venta') {
+            if (ventaEnCurso) {
+                const liberado = Math.max(0, disponibleDespues - disponibleAntes);
+                alert(`${liberado.toFixed(4)} ${sym} liberados y disponibles para operar.`);
+            } else {
+                alert(`Orden pendiente eliminada. Sus ${orden.cantidad.toFixed(4)} ${sym} ya estaban disponibles para operar.`);
+            }
+        }
+    }
+
+    function reiniciarBBDD() {
+        if (confirm("¿Estás seguro de reiniciar las 3 pestañas al estado inicial?")) {
+            localStorage.removeItem('solana_db_v2');
+            localStorage.removeItem('solana_db');
+            db = JSON.parse(JSON.stringify(bbddInicial));
+            guardarBBDD();
+        }
+    }
+
+    function exportarBBDD() {
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(db, null, 2));
+        const dlAnchorElem = document.createElement('a');
+        dlAnchorElem.setAttribute("href", dataStr);
+        dlAnchorElem.setAttribute("download", `crypto_manager_bbdd_${new Date().toISOString().slice(0,10)}.json`);
+        dlAnchorElem.click();
+    }
+
+    function importarBBDD(event) {
+        const fileReader = new FileReader();
+        fileReader.onload = function(e) {
+            try {
+                const importada = JSON.parse(e.target.result);
+                if (!importada || !importada.cryptos || typeof importada.usdcCapitalTotal !== 'number') {
+                    throw new Error('Formato no válido');
+                }
+                db = importada;
+                guardarBBDD();
+            } catch (error) {
+                alert("El archivo no tiene un formato de calculadora válido.");
+            }
+        };
+        fileReader.readAsText(event.target.files[0]);
+    }
+
+    render();
+</script>
+</body>
+</html>
