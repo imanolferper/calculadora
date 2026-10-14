@@ -28,13 +28,16 @@
         
         /* SISTEMA DE PESTAÑAS */
         .tabs-container {
-            display: flex;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
             gap: 10px;
             margin-bottom: 20px;
             border-bottom: 2px solid #334155;
             padding-bottom: 5px;
         }
         .tab-btn {
+            min-width: 0;
+            width: 100%;
             background-color: #1e293b;
             color: var(--subtext);
             padding: 12px 24px;
@@ -45,6 +48,17 @@
             font-size: 16px;
             font-weight: bold;
             transition: all 0.2s;
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+        @media (max-width: 600px) {
+            .tabs-container {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .tab-btn {
+                padding: 10px 8px;
+                font-size: 14px;
+            }
         }
         .tab-btn.active {
             background-color: var(--accent);
@@ -127,6 +141,22 @@
         .tendencia-resumen { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
         .tendencia-chip { background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 8px 10px; min-width: 130px; }
         .tendencia-chip strong { display: block; color: var(--text); }
+        .precios-cripto-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            margin-top: 14px;
+        }
+        .precio-cripto-card {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 10px;
+            padding: 14px;
+        }
+        .precio-cripto-card h3 { margin: 0 0 10px; color: var(--accent); }
+        .precio-cripto-actual { font-size: 20px; font-weight: bold; margin-bottom: 12px; }
+        .precio-cripto-medias { display: grid; gap: 6px; color: var(--subtext); font-size: 13px; }
+        .precio-cripto-medias strong { color: var(--text); }
         .dialog-backdrop { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; background: #000b; padding: 18px; }
         .dialog { width: min(100%, 440px); padding: 22px; border-radius: 12px; background: var(--card-bg); }
         .dialog .form-linea { flex-direction: column; }
@@ -369,6 +399,16 @@
         </table>
     </div>
 
+    <div class="seccion">
+        <h2>🌐 Precios de todas las criptomonedas</h2>
+        <p class="nota-operativa">Precio actual en USD desde CoinGecko. Medias ponderadas por cantidad de las operaciones ejecutadas, en USDC e incluyendo las comisiones registradas.</p>
+        <div class="form-linea">
+            <button id="sincronizar-precios-cripto" class="btn-green" type="button" onclick="sincronizarPreciosCripto()">🔄 Sincronizar precios</button>
+            <span id="estado-precios-cripto" class="nota-operativa" role="status">Los precios se sincronizan al iniciar sesión.</span>
+        </div>
+        <div id="precios-cripto-grid" class="precios-cripto-grid"></div>
+    </div>
+
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -607,6 +647,7 @@
                 if (!await guardarEnSupabase()) throw new Error('No se pudo inicializar la base de datos. Revisa las tablas y las politicas RLS.');
             }
             mostrarEstado('Conectado - datos sincronizados con Supabase');
+            void sincronizarPreciosCripto();
         } else render();
     }
 
@@ -805,6 +846,61 @@
         return cantidad > 0 ? coste / cantidad : null;
     }
 
+    function calcularPrecioMedioOperaciones(crypto, tipo) {
+        let cantidadTotal = 0;
+        let importeTotal = 0;
+        (crypto.historial || []).forEach(operacion => {
+            const cantidad = Number(operacion.cantidad);
+            if (operacion.tipo !== tipo || !Number.isFinite(cantidad) || cantidad <= 0) return;
+            const importe = tipo === 'Compra'
+                ? Number.isFinite(operacion.costeRealUSDC)
+                    ? operacion.costeRealUSDC
+                    : Number.isFinite(operacion.importeNeto)
+                        ? operacion.importeNeto
+                        : cantidad * Number(operacion.precio)
+                : Number.isFinite(operacion.importeNeto)
+                    ? operacion.importeNeto
+                    : cantidad * Number(operacion.precio);
+            if (!Number.isFinite(importe) || importe < 0) return;
+            cantidadTotal += cantidad;
+            importeTotal += importe;
+        });
+        return cantidadTotal > 0 ? importeTotal / cantidadTotal : 0;
+    }
+
+    function formatoPrecioCripto(precio) {
+        return Number(precio).toLocaleString('es-ES', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+    }
+
+    function renderResumenGlobalPrecios() {
+        const contenedor = document.getElementById('precios-cripto-grid');
+        if (!contenedor) return;
+        contenedor.innerHTML = '';
+        simbolosCrypto.forEach(simbolo => {
+            const cripto = db.cryptos[simbolo];
+            const precioActual = Number(db.tendencia[simbolo].precioActual);
+            const precioActualTexto = Number.isFinite(precioActual) && precioActual > 0
+                ? `${formatoPrecioCripto(precioActual)} USD`
+                : 'Sin sincronizar';
+            const precioMedioCompra = calcularPrecioMedioOperaciones(cripto, 'Compra');
+            const precioMedioVenta = calcularPrecioMedioOperaciones(cripto, 'Venta');
+            const tarjeta = document.createElement('article');
+            tarjeta.className = 'precio-cripto-card';
+            tarjeta.innerHTML = `
+                <h3>${simbolo}</h3>
+                <div class="precio-cripto-actual">${precioActualTexto}</div>
+                <div class="precio-cripto-medias">
+                    <div>Precio medio de compra: <strong>${formatoPrecioCripto(precioMedioCompra)} USDC</strong></div>
+                    <div>Precio medio de venta: <strong>${formatoPrecioCripto(precioMedioVenta)} USDC</strong></div>
+                </div>
+            `;
+            contenedor.appendChild(tarjeta);
+        });
+    }
+
     function moverStaking(direccion) {
         const sym = db.pestanaActiva;
         const crypto = db.cryptos[sym];
@@ -957,6 +1053,7 @@
         document.getElementById('precio-medio').innerText = precioMedio === null
             ? 'Sin compras'
             : `${precioMedio.toFixed(2)} USDC`;
+        renderResumenGlobalPrecios();
         document.getElementById('comision-porcentaje').value = db.comisionPorcentaje;
         document.getElementById('rebalance-porcentaje').value = db.rebalancePorcentaje[sym];
         const tendenciaActual = db.tendencia[sym] || { diaria: 'Lateral', semanal: 'Lateral', mensual: 'Lateral', score: 0 };
@@ -1061,6 +1158,63 @@
         FET: 'fetch-ai',
         SUI: 'sui'
     };
+
+    async function sincronizarPreciosCripto() {
+        const boton = document.getElementById('sincronizar-precios-cripto');
+        const estado = document.getElementById('estado-precios-cripto');
+        if (boton) boton.disabled = true;
+        if (estado) {
+            estado.textContent = 'Sincronizando precios actuales con CoinGecko...';
+            estado.style.color = 'var(--subtext)';
+        }
+        try {
+            const ids = simbolosCrypto.map(simbolo => mapaCoinGecko[simbolo]).join(',');
+            const respuesta = await fetch(
+                `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`
+            );
+            if (!respuesta.ok) {
+                throw new Error(respuesta.status === 429
+                    ? 'CoinGecko ha alcanzado el límite de peticiones (HTTP 429).'
+                    : `CoinGecko respondió HTTP ${respuesta.status}.`);
+            }
+            const precios = await respuesta.json();
+            const actualizados = [];
+            const sinPrecio = [];
+            const actualizado = new Date().toLocaleString();
+            simbolosCrypto.forEach(simbolo => {
+                const precio = Number(precios[mapaCoinGecko[simbolo]]?.usd);
+                if (!Number.isFinite(precio) || precio <= 0) {
+                    sinPrecio.push(simbolo);
+                    return;
+                }
+                db.tendencia[simbolo] = {
+                    ...db.tendencia[simbolo],
+                    precioActual: precio,
+                    actualizadoPrecio: actualizado
+                };
+                actualizados.push(simbolo);
+            });
+            if (!actualizados.length) throw new Error('CoinGecko no devolvió precios válidos para ninguna criptomoneda.');
+            render();
+            if (!await guardarEnSupabase()) {
+                throw new Error('Los precios se actualizaron en pantalla, pero no se pudieron guardar en Supabase.');
+            }
+            const mensaje = `Precios actualizados: ${actualizados.join(', ')} (${actualizado})`
+                + (sinPrecio.length ? `. Sin datos para: ${sinPrecio.join(', ')}.` : '.');
+            if (estado) {
+                estado.textContent = mensaje;
+                estado.style.color = sinPrecio.length ? 'var(--yellow)' : 'var(--green)';
+            }
+        } catch (error) {
+            console.error('Error al sincronizar precios de CoinGecko:', error);
+            if (estado) {
+                estado.textContent = `No se pudieron sincronizar los precios: ${error.message}`;
+                estado.style.color = 'var(--red)';
+            }
+        } finally {
+            if (boton) boton.disabled = false;
+        }
+    }
 
     async function obtenerPreciosCoinGecko(simbolo) {
         const coinId = mapaCoinGecko[simbolo];
